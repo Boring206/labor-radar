@@ -81,6 +81,9 @@ def _contents(case: Case, attachment: Attachment | None) -> list[dict]:
     if attachment is not None:
         contents[-1]["parts"].append({"text": f"（這則訊息附了一個檔案：{attachment.name or attachment.mime}。"
                                               "內容要用 read_document 讀取。）"})
+    if case.history[-1].tapped:
+        contents[-1]["parts"].append({"text": "（工人點選了這個選項，系統已經存好。不要再用 set_facts 存它，"
+                                              "用 next_questions 看還有什麼要問。）"})
     return contents
 
 

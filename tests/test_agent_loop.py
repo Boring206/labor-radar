@@ -9,6 +9,7 @@ from labor_radar.agent import questions
 from labor_radar.agent.case import Case, Phase
 from labor_radar.agent.llm import LLMError, ScriptedLLM, Step, ToolCall
 from labor_radar.agent.loop import MAX_STEPS, run_turn
+from labor_radar.agent.questions import Tap
 from labor_radar.agent.tools import Attachment
 
 OPENING = ("我在手搖飲打工，時薪185，10/7 17:00到23:00，10/8 08:00到13:00。老闆每週排班，今年是2026年。")
@@ -345,6 +346,14 @@ def test_an_attached_file_is_read_before_the_model_gets_to_choose(monkeypatch):
     attached = ScriptedLLM([Step.calling(("read_document", {})), Step.saying("請告訴我時薪。")])
     run_turn(Case(), "這是班表", attached, "zh-TW", Attachment(b"x", "image/png"))
     assert [r.calls for r in attached.requests] == ["read_document", "auto"]
+
+
+def test_the_model_is_told_a_tapped_answer_is_already_stored():
+    llm = ScriptedLLM([Step.calling(("next_questions", {})), Step.saying("好，請檢查資料表。")])
+    result = run_turn(confirmed_case().model_copy(update={"confirmed": False}), Tap("week_starts_on", "monday"), llm, "zh-TW")
+    assert result.case.draft["employment"]["week_starts_on"] == "monday"
+    [said, note] = llm.requests[0].contents[-1]["parts"]
+    assert said["text"].endswith("→ 星期一") and "系統已經存好" in note["text"]
 
 
 def test_a_turn_without_a_file_still_opens_with_a_tool_call():
