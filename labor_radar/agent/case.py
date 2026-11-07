@@ -97,17 +97,19 @@ class FieldSpec:
     """What `materialize` writes when the draft has no value. None leaves the key out."""
     assumed: bool = False
     """The default is a guess about the worker, so the confirm table flags it."""
+    free_text: bool = False
+    """Words rather than a typed value. Read from a photo, they may hold any number, so they vouch for none."""
 
 
 ANSWERS = _values(Answer)
 _SPECS = (
-    FieldSpec("worker.name", _text(100), default=UNSET_NAME),
-    FieldSpec("worker.address", _text(200)),
-    FieldSpec("worker.phone", _text(40)),
-    FieldSpec("employer.name", _text(100), default=UNSET_NAME),
-    FieldSpec("employer.address", _text(200)),
-    FieldSpec("employer.representative", _text(100)),
-    FieldSpec("city", _text(20)),
+    FieldSpec("worker.name", _text(100), default=UNSET_NAME, free_text=True),
+    FieldSpec("worker.address", _text(200), free_text=True),
+    FieldSpec("worker.phone", _text(40), free_text=True),
+    FieldSpec("employer.name", _text(100), default=UNSET_NAME, free_text=True),
+    FieldSpec("employer.address", _text(200), free_text=True),
+    FieldSpec("employer.representative", _text(100), free_text=True),
+    FieldSpec("city", _text(20), free_text=True),
     FieldSpec("employment.pay_basis", _choice(_values(PayBasis)), required=True),
     FieldSpec("employment.agreed_wage", _number(0, 1_000_000, low_open=True), required=True),
     FieldSpec("employment.agreed_monthly_hours", _number(0, 744, low_open=True)),

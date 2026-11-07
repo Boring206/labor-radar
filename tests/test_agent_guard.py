@@ -58,7 +58,7 @@ def test_numbers_that_are_in_the_facts_pass(text, case):
     ("Menurut Pasal 99", "第 99 條"),
     ("ตามมาตรา 99", "第 99 條"),
     ("月薪 4.5 萬", "45,000"),
-    ("你大概少拿了2萬5千元", "25,000"),
+    ("你大概拿了2萬5千元", "25,000"),
     ("月薪 4萬5千", "45,000"),
     ("差不多 1萬 元", "10,000"),
     ("lương 190 nghìn", "190,000"),
@@ -161,7 +161,7 @@ def test_ordinary_words_that_share_characters_with_a_judging_word_pass(sentence,
 def test_before_the_report_an_amount_must_come_from_the_facts_or_the_worker(case):
     question = "公司有沒有經工會同意，讓每月加班超過 46 小時？"
     assert bad("每月加班超過 46 小時", case, extra=[question]) == []
-    assert kinds("你可以拿回 46 元", case, extra=[question]) == ["amount"]
+    assert kinds("你會拿到 46 元", case, extra=[question]) == ["amount"]
     assert bad("時薪 185 元，上週付你 8,140 元", case) == []
 
 

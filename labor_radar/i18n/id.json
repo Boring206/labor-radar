@@ -231,6 +231,7 @@
   "agent.trace.llm_error": "Pemanggilan model gagal, memakai teks tetap",
   "agent.trace.limit": "Batas jumlah langkah tercapai, memakai teks tetap",
   "agent.trace.problem.number": "Balasan memuat angka yang tidak ada di tabel data, ucapan Anda, atau laporan.",
+  "agent.trace.problem.amount": "Sebelum laporan keluar, balasan menyebut jumlah uang yang tidak Anda sebutkan dan tidak ada di tabel data.",
   "agent.trace.problem.term": "Balasan memakai kata yang menilai sah atau tidaknya sebelum laporan keluar.",
   "agent.trace.problem.empty": "Balasan kosong.",
   "agent.not_asked": "Pertanyaan yang tidak memengaruhi hasil, jadi tidak ditanyakan",

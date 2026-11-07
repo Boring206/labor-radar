@@ -261,7 +261,8 @@ def next_questions(case: Case, args: dict, ctx: Ctx) -> tuple[Case, dict]:
         result |= questions.describe(case, ctx.lang)
         result["question_count"] = len(result["questions"])
     result["optional_missing"] = [p for p in ("payslips.gross_pay", "city") if get_path(case.draft, p) is None]
-    ctx.ground(json.dumps(result, ensure_ascii=False), case)
+    without_spread = [{k: v for k, v in q.items() if k != "what_changes"} for q in result.get("questions", [])]
+    ctx.ground(json.dumps(result | {"questions": without_spread}, ensure_ascii=False), case)
     return case, result
 
 
