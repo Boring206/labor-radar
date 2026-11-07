@@ -45,3 +45,13 @@ def found(assessment: Assessment, rule_id: str, verdict: Verdict | None = None):
 @pytest.fixture
 def sample():
     return json.loads((SAMPLES / "lin_xiaomei.json").read_text(encoding="utf-8"))
+
+
+def agent_case(data, **employment):
+    """The agent's Case for a full record, with some employment answers replaced."""
+    from labor_radar.agent.case import Case
+
+    draft = json.loads(json.dumps(data))
+    draft["employment"] |= employment
+    draft["payslips"] = [{k: v for k, v in p.items() if k != "period"} for p in draft.get("payslips", [])]
+    return Case(draft=draft)
