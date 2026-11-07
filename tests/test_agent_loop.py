@@ -74,6 +74,19 @@ def test_the_worker_talks_and_the_agent_asks_only_what_matters():
     assert result.report_view is None
 
 
+def test_the_amount_a_question_could_change_is_for_the_chips_not_for_the_reply():
+    def quote_the_spread(request):
+        [amount] = re.findall(r"最多差 ([\d,]+) 元", json.dumps(request.contents[-1], ensure_ascii=False))
+        return Step.saying(f"答案不同，金額最多差 {amount} 元。")
+
+    llm = ScriptedLLM([opening_facts(), set_facts(fact("employment.shift_system", "flexible", "老闆每週排班")),
+                       Step.calling(("next_questions", {})), quote_the_spread,
+                       Step.saying("你和老闆是受僱關係嗎？")])
+    result = run_turn(Case(), OPENING, llm, "zh-TW")
+    assert result.phase is Phase.CLARIFY
+    assert result.reply == "你和老闆是受僱關係嗎？"
+
+
 def test_the_model_sees_only_the_tools_its_phase_allows_and_is_told_the_state():
     llm = ScriptedLLM([opening_facts(), Step.saying("好")])
     run_turn(Case(), OPENING, llm, "zh-TW")
