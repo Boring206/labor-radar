@@ -4,11 +4,18 @@ import json
 from datetime import date
 from pathlib import Path
 
-from fastapi import Body, FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
+from pydantic import BaseModel, Field, ValidationError
+
 from labor_radar import extraction, report
+from labor_radar.agent import questions
+from labor_radar.agent.case import Case, Phase, fact_table
+from labor_radar.agent.llm import LLM, GeminiLLM
+from labor_radar.agent.loop import TurnResult, run_turn
+from labor_radar.agent.tools import Attachment
 from labor_radar.engine import assess
 from labor_radar.i18n import CATALOGS, REFERENCE, languages, resolve
 from labor_radar.intake import IntakeError, parse_record
@@ -30,6 +37,7 @@ def meta() -> dict:
     return {
         "languages": languages(),
         "gemini": extraction.available(),
+        "agent": extraction.available(),
         "sample": json.loads(SAMPLE.read_text(encoding="utf-8")),
     }
 
@@ -64,3 +72,50 @@ async def extract(file: UploadFile = File(...)) -> dict:
     except extraction.ExtractionError as error:
         raise HTTPException(status_code=error.status, detail=str(error)) from None
     return draft.model_dump(mode="json")
+
+
+class TurnIn(BaseModel):
+    case: Case = Field(default_factory=Case)
+    message: str = Field(min_length=1, max_length=2000)
+    lang: str = Field(REFERENCE, max_length=20)
+
+
+class ConfirmIn(BaseModel):
+    case: Case
+
+
+def get_llm() -> LLM:
+    if not extraction.available():
+        raise HTTPException(status_code=503, detail="GEMINI_API_KEY is not set, so the AI assistant is off")
+    return GeminiLLM()
+
+
+def _untrusted_turn(raw: str) -> TurnIn:
+    try:
+        return TurnIn.model_validate_json(raw)
+    except ValidationError as error:
+        raise HTTPException(status_code=422, detail=[
+            f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in error.errors()
+        ]) from None
+
+
+@app.post("/api/agent/turn")
+def agent_turn(payload: str = Form(...), file: UploadFile | None = File(None),
+               llm: LLM = Depends(get_llm)) -> TurnResult:
+    turn = _untrusted_turn(payload)
+    attachment = None
+    if file is not None:
+        data = file.file.read(extraction.MAX_BYTES + 1)
+        if len(data) > extraction.MAX_BYTES:
+            raise HTTPException(status_code=413, detail="file is larger than 8 MB")
+        attachment = Attachment(data, file.content_type or "", file.filename or "")
+    return run_turn(turn.case, turn.message, llm, turn.lang, attachment)
+
+
+@app.post("/api/agent/confirm")
+def agent_confirm(body: ConfirmIn, lang: str = Query(REFERENCE)) -> dict:
+    if questions.phase(body.case) is not Phase.CONFIRM:
+        raise HTTPException(status_code=409, detail="the facts cannot be confirmed yet, or are already confirmed")
+    case = body.case.model_copy(update={"confirmed": True})
+    return {"case": case, "phase": questions.phase(case),
+            "facts": [row.as_dict() for row in fact_table(case, resolve(lang))]}
