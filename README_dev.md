@@ -1,12 +1,80 @@
-# 勞權雷達開發筆記
+# 勞權雷達：開發與執行
+
+以下指令在這個資料夾執行，Linux、macOS 或 WSL 都可以，需要先裝好 [uv](https://docs.astral.sh/uv/)。
 
 ## 執行
 
 ```bash
-uv run pytest -q                          # 全部測試，不連網
-uv run python -m labor_radar samples/lin_xiaomei.json
-GEMINI_API_KEY=... uv run uvicorn labor_radar.web:app --port 8730
+uv sync
+wslport 8730 -n          # 選用：在 WSL 上先確認 port 是空的（結束碼 1 代表空）
+uv run uvicorn labor_radar.web:app --port 8730
 ```
+
+瀏覽器開 <http://127.0.0.1:8730>，按「載入範例（虛構的林小美）」再按「開始健檢」。
+
+這樣啟動沒有 Gemini 金鑰，「讀取照片」按鈕會停用，其他功能都能用。要讀照片時，先在本機設定 `GEMINI_API_KEY` 環境變數再啟動。程式只從這個環境變數讀金鑰，不會印出來，也不會寫進檔案；金鑰不要放進這個資料夾，更不要提交到 Git：
+
+```bash
+export GEMINI_API_KEY=<你的金鑰>
+uv run uvicorn labor_radar.web:app --port 8730
+```
+
+照片會傳到 Google 的 Gemini API。依 Gemini API 條款，免費額度送出的內容可能被拿去改進產品、由人工審閱，所以只用虛構照片示範；處理真實勞工的照片前，要改用付費額度（出處見 `labor_radar/rules/sources.md`「Gemini API 的資料使用」）。
+
+示範照片是 `samples/schedule_lin_xiaomei.jpg`。要換模型，加上 `GEMINI_MODEL=<模型名稱>`，預設是 `gemini-2.5-flash`。
+
+## 測試與範例
+
+```bash
+uv run pytest -q
+uv run python -m labor_radar samples/lin_xiaomei.json          # Markdown 報告
+uv run python -m labor_radar samples/lin_xiaomei.json --json   # 完整 JSON
+uv run python -m labor_radar samples/lin_xiaomei.json --lang vi
+```
+
+已錄好的輸出在 `samples/lin_xiaomei.output.md`。Gemini 讀示範照片的實際結果在 `samples/schedule_lin_xiaomei.extracted.json`。
+
+## 程式結構
+
+| 檔案 | 負責 |
+|---|---|
+| `labor_radar/model.py` | 一位勞工的資料：班次、工作條件、薪資單 |
+| `labor_radar/intake.py` | 唯一的輸入邊界。表單、JSON 檔或 AI 讀出的資料都在這裡驗證，轉成 `WorkRecord` |
+| `labor_radar/extraction.py` | Gemini 視覺模型。只轉錄，輸出受 JSON Schema 約束，結果填回表單讓使用者確認 |
+| `labor_radar/rules/law.py` | 法條引用與全國法規資料庫連結 |
+| `labor_radar/rules/minimum_wage.py` | 最低工資年度表，含 `pending_approval` 狀態 |
+| `labor_radar/rules/holidays.py` | 國定假日表（紀念日及節日實施條例，實際日期） |
+| `labor_radar/rules/ledger.py` | 日帳：班次歸日、7 日週期（起算日由 engine 指定）、休息日推定、平日每小時工資額 |
+| `labor_radar/rules/core.py` | 規則、結果、適用性閘門的資料形狀 |
+| `labor_radar/rules/registry.py` | 規則表：每條規則一個檢查函式和一筆 `Rule` |
+| `labor_radar/rules/sources.md` | 法條原文與行政解釋引文，由 `tools/fetch_sources.py` 產生 |
+| `labor_radar/engine.py` | 跑全部規則、套閘門、和薪資單結算。勞工不知道 7 日週期起算日時，7 種起算日各跑一次，採用金額最低的一種 |
+| `labor_radar/report.py`、`paperwork.py`、`referrals.py` | 輸出：說明、算式、證據清單、調解申請書草稿、轉介 |
+| `labor_radar/i18n/*.json` | 介面字串。`zh-TW` 是基準，`vi`、`id`、`th` 是機器翻譯草稿 |
+| `labor_radar/web.py`、`static/` | FastAPI 與前端 |
+| `labor_radar/agent/`、`static/agent.js` | AI 助理（代理人），見下方「AI 助理」 |
+
+## 每年要更新的資料
+
+1. 最低工資：勞動部公告新數額後，在 `minimum_wage.py` 的 `TABLE` 加一列。只有提案、還沒公告的，狀態填 `PENDING_APPROVAL`，結果只會顯示「如果核定」的差額，不算進短少金額。
+2. 國定假日：依人事行政總處的辦公日曆表確認農曆節日的國曆日期，加進 `holidays.py`，並延長 `COVERED`。只用實際日期，公務員的補假和調整放假不適用勞工。
+3. 法條：執行 `uv run python tools/fetch_sources.py` 重新抓取原文，用 `git diff` 檢查條文有沒有變。
+
+## 新增一條規則
+
+1. 在 `rules/law.py` 加上引用。執行 `tools/fetch_sources.py`，讓原文進到 `sources.md`。
+2. 在 `rules/registry.py` 寫檢查函式，回傳 `Finding`；有金額的寫成 `Calc`，算式會原樣顯示給使用者。
+3. 在 `RULES` 加一筆 `Rule`：引用、生效日、適用性閘門、證據項目、是否涉及金額。
+4. 在 `i18n/zh-TW.json` 加 `rule.<id>.title` 和每個 `rule.<id>.<variant>` 說明。
+5. 在 `tests/test_rules.py` 寫行為測試，預期金額要從條文手算，不能從程式跑出來再抄。
+
+`tests/test_engine.py` 會檢查每條規則都有標題、每個引用的法條都在 `sources.md` 裡有原文。
+
+## 憑證問題
+
+全國法規資料庫的憑證缺少 Subject Key Identifier，Python 3.13 起的嚴格驗證會拒絕。`tools/fetch_sources.py` 只關掉 `VERIFY_X509_STRICT`，憑證鏈和主機名稱仍照常驗證。
+
+## AI 助理
 
 網頁有兩種模式。「表單」模式要使用者自己填法律問題。「AI 助理」模式讓使用者用對話和照片交代工作情況，由助理整理成資料表。
 
@@ -19,11 +87,11 @@ uv run python tools/agent_smoke.py   # 腳本化工人對話，輸出 samples/ag
 uv run --with playwright python tools/agent_ui_shot.py --chrome <chrome 路徑>   # 需先啟動網頁，輸出截圖
 ```
 
-## 設計原則
+### 設計原則
 
 AI 不判斷合法與否，也不計算金額。規則引擎判斷，護欄檢查 AI 說出口的每個數字。`extraction.py` 只轉錄照片，`intake.parse_record` 是資料進入引擎的唯一入口，代理人沿用這兩條界線。
 
-## 代理人模組（`labor_radar/agent/`）
+### 代理人模組（`labor_radar/agent/`）
 
 | 模組 | 負責 |
 | --- | --- |
@@ -73,7 +141,7 @@ AI 不判斷合法與否，也不計算金額。規則引擎判斷，護欄檢�
 
 `TurnResult.trace` 記錄每個工具呼叫（工具、參數摘要、成功或失敗、被拒絕的值與原因）、護欄事件（被攔下的原文、問題、重寫結果或改用固定文字）、模型錯誤與步驟上限。軌跡不含照片內容與金鑰。介面在「代理人做了什麼」顯示。
 
-## 已知限制
+### 已知限制
 
 - 護欄只讀阿拉伯數字與繁體中文用語。非中文的回覆只做數字檢查，不做用語檢查。中文數字（「三十分鐘」）不檢查。
 - 數字檢查比對的是「有沒有出現過」，不比對單位或上下文。小的數字（1、2）容易剛好出現在別處。
