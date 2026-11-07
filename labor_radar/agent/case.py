@@ -291,7 +291,9 @@ def _derived_period(draft: dict) -> dict | None:
 
 def materialize(case: Case, overrides: dict[str, Any] | None = None) -> dict:
     """A full RecordIn dict, with defaults for what the worker has not said.
-    `overrides` maps field paths to values, for asking what an answer would change."""
+    `overrides` maps field paths to values, for asking what an answer would change.
+    A payslip without its gross pay says nothing yet and is left out. A gross pay the worker typed counts
+    as their own record unless they said it came from a payslip."""
     data = copy.deepcopy(case.draft)
     for path, value in (overrides or {}).items():
         put_path(data, path, value)
@@ -303,9 +305,13 @@ def materialize(case: Case, overrides: dict[str, Any] | None = None) -> dict:
     derived = _derived_period(data)
     if derived:
         data["period"] = {**derived, **period}
-    for slip in data.get("payslips", []):
-        slip.setdefault("self_reported", False)
+    slips = [slip for slip in data.pop("payslips", []) if "gross_pay" in slip]
+    typed = source_of(case, "payslips.gross_pay").source is Source.USER
+    for slip in slips:
+        slip.setdefault("self_reported", typed)
         slip["period"] = dict(data.get("period", {}))
+    if slips:
+        data["payslips"] = slips
     return data
 
 
