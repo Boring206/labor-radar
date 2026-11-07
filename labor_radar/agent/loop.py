@@ -1,6 +1,7 @@
 """One turn of the conversation: the model picks tools, the tools change the case, the guard reads the reply."""
 
 import json
+import re
 from datetime import date
 
 from pydantic import BaseModel
@@ -99,6 +100,14 @@ def _trace_tool(name: str, args: object, result: dict) -> dict:
     if result.get("rejected"):
         event["rejected"] = result["rejected"]
     return event
+
+
+def plain_text(text: str) -> str:
+    """The chat box shows text as typed, so Markdown markers the model adds would show as characters."""
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    text = re.sub(r"`([^`\n]+)`", r"\1", text)
+    text = re.sub(r"(?m)^(\s*)[*-]\s+", r"\1・", text)
+    return re.sub(r"(?m)^#{1,6}\s*", "", text)
 
 
 def _fallback(case: Case, phase: Phase, ctx: Ctx) -> tuple[Case, str]:
@@ -200,6 +209,7 @@ def run_turn(case: Case, message: str | Tap, llm: LLM, lang: str, attachment: At
         trace.append({"kind": "llm_error", "message": str(error)})
     if reply is None:
         case, reply = _fallback(case, questions.phase(case), ctx)
+    reply = plain_text(reply)
     case = with_turn(case, "assistant", reply)
     phase = questions.phase(case)
     view = None

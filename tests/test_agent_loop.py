@@ -388,3 +388,17 @@ def test_a_turn_without_a_file_still_opens_with_a_tool_call():
     plain = ScriptedLLM([Step.calling(("next_questions", {})), Step.saying("請告訴我時薪。")])
     run_turn(Case(), "你好", plain, "zh-TW")
     assert [r.calls for r in plain.requests] == ["any", "auto"]
+
+
+def test_markdown_in_a_reply_shows_as_plain_text():
+    """Recorded 2026-11-08: the chat box showed the model's **bold** markers and `* ` bullets as typed characters."""
+    reply = "**已記下：**\n\n* 你是受僱員工。\n  * 排班不固定。\n- 請看資料表。\n\n## 提醒\n用 `資料表` 檢查。"
+    result = run_turn(Case(), "hi", ScriptedLLM([Step.calling(("next_questions", {})), Step.saying(reply)]), "zh-TW")
+    assert result.reply == "已記下：\n\n・你是受僱員工。\n  ・排班不固定。\n・請看資料表。\n\n提醒\n用 資料表 檢查。"
+    assert result.case.history[-1].text == result.reply
+
+
+def test_a_numbered_list_is_left_alone():
+    reply = "1. 你和雇主是什麼關係？\n2. 公司有沒有說你是責任制？"
+    result = run_turn(Case(), "hi", ScriptedLLM([Step.calling(("next_questions", {})), Step.saying(reply)]), "zh-TW")
+    assert result.reply == reply
