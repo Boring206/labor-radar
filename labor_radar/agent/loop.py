@@ -9,6 +9,7 @@ from labor_radar import report
 from labor_radar.agent import guard, questions, tools
 from labor_radar.agent.case import Case, Phase, fact_table, materialize, with_turn
 from labor_radar.agent.llm import ANY, AUTO, LLM, NONE, LLMError, Step
+from labor_radar.agent.questions import Tap
 from labor_radar.agent.tools import Attachment, Ctx
 from labor_radar.engine import assess
 from labor_radar.i18n import CATALOGS, resolve, t
@@ -169,11 +170,16 @@ def _shown(event: dict) -> dict:
     return {k: v for k, v in event.items() if k != "detail"}
 
 
-def run_turn(case: Case, message: str, llm: LLM, lang: str, attachment: Attachment | None = None,
+def run_turn(case: Case, message: str | Tap, llm: LLM, lang: str, attachment: Attachment | None = None,
              max_steps: int = MAX_STEPS, debug: bool = False) -> TurnResult:
-    """`debug` keeps what the guard blocked in the trace, for a developer's transcript. Never for the web."""
+    """`message` is what the worker typed, or the option they tapped. `debug` keeps what the guard blocked
+    in the trace, for a developer's transcript. Never for the web."""
     lang = resolve(lang)
-    case = with_turn(case, "user", message)
+    if isinstance(message, Tap):
+        case, line = tools.apply_tap(case, message, lang)
+        case = with_turn(case, "user", line, tapped=True)
+    else:
+        case = with_turn(case, "user", message)
     ctx = Ctx(lang=lang, attachment=attachment)
     contents = _contents(case, attachment)
     trace: list[dict] = []

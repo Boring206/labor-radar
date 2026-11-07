@@ -52,6 +52,18 @@ BY_PATH = {q.path: q for q in QUESTIONS}
 
 
 @dataclass(frozen=True)
+class Tap:
+    """An option the worker tapped under a question, in place of a typed answer."""
+    question: str
+    option: str
+
+    def __post_init__(self) -> None:
+        question = BY_ID.get(self.question)
+        if question is None or self.option not in (*question.options, UNKNOWN):
+            raise ValueError(f"{self.question!r} has no option {self.option!r}")
+
+
+@dataclass(frozen=True)
 class Impact:
     question: Question
     rules: tuple[str, ...]

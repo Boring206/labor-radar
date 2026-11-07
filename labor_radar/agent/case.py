@@ -224,6 +224,8 @@ class Provenance(_Strict):
 class Turn(_Strict):
     role: Literal["user", "assistant"]
     text: str = Field(max_length=6000)
+    tapped: bool = False
+    """The worker tapped an option instead of typing. The app wrote the text, so nothing is quoted from it."""
 
 
 class Case(_Strict):
@@ -266,14 +268,19 @@ class Case(_Strict):
     def user_text(self) -> str:
         return "\n".join(turn.text for turn in self.history if turn.role == "user")
 
+    def typed_now(self) -> str:
+        """What the worker typed in the message being answered, the only words a fact may quote."""
+        last = next((turn for turn in reversed(self.history) if turn.role == "user"), None)
+        return last.text if last is not None and not last.tapped else ""
+
 
 def facts_state(case: Case) -> dict:
     """Everything a confirmation or a report depends on, to tell whether a tool changed it."""
     return case.model_dump(include={"draft", "provenance", "answered"})
 
 
-def with_turn(case: Case, role: Literal["user", "assistant"], text: str) -> Case:
-    history = [*case.history, Turn(role=role, text=text[:6000])][-HISTORY_CAP:]
+def with_turn(case: Case, role: Literal["user", "assistant"], text: str, *, tapped: bool = False) -> Case:
+    history = [*case.history, Turn(role=role, text=text[:6000], tapped=tapped)][-HISTORY_CAP:]
     return case.model_copy(update={"history": history})
 
 

@@ -44,14 +44,13 @@ function renderFacts() {
 
 function renderChips() {
   const groups = (agent.last?.questions?.questions ?? []).map((q) => {
-    const answer = (label) => sendMessage(`${q.question} → ${label}`);
-    const chip = (label, cls = "") => {
+    const chip = (option, label, cls = "") => {
       const button = el("button", { type: "button", class: `chip ${cls}`.trim(), text: label });
-      button.addEventListener("click", () => answer(label));
+      button.addEventListener("click", () => sendTurn(`${q.question} → ${label}`, { tap: { question: q.id, option } }));
       return button;
     };
     return el("div", { class: "chip-group" }, el("strong", { text: q.question }), el("p", { class: "note", text: q.what_changes }),
-      el("div", { class: "chip-row" }, ...q.options.map((o) => chip(o.label)), chip(tr("ui.answer.unknown"), "skip")));
+      el("div", { class: "chip-row" }, ...q.options.map((o) => chip(o.value, o.label)), chip("unknown", tr("ui.answer.unknown"), "skip")));
   });
   $("chips").replaceChildren(...groups);
 }
@@ -89,6 +88,7 @@ function renderTrace() {
 }
 
 function renderAgent() {
+  $("chat-send").disabled = agent.busy;
   renderChat(agent.pending);
   renderFacts();
   renderChips();
@@ -109,17 +109,15 @@ function describeFailure(body, status) {
   return tr("agent.error", { message: typeof detail === "string" ? detail : JSON.stringify(detail) });
 }
 
-async function sendMessage(text) {
-  const file = $("chat-file").files[0];
-  text = (text ?? "").trim() || (file ? tr("agent.attached", { name: file.name }) : "");
-  if (!text || agent.busy) return;
+// A turn the worker typed or tapped. Only a typed turn carries the selected file.
+async function sendTurn(shown, input, file = null) {
+  if (agent.busy) return false;
   agent.busy = true;
   agent.problem = null;
-  agent.pending = text;
-  $("chat-send").disabled = true;
+  agent.pending = shown;
   renderAgent();
   const form = new FormData();
-  form.append("payload", JSON.stringify({ case: agent.case, message: text, lang }));
+  form.append("payload", JSON.stringify({ case: agent.case, ...input, lang }));
   if (file) form.append("file", file);
   try {
     const response = await fetch("/api/agent/turn", { method: "POST", body: form });
@@ -127,17 +125,26 @@ async function sendMessage(text) {
     if (!response.ok) throw new Error(describeFailure(body, response.status));
     agent.case = body.case;
     agent.last = body;
-    agent.turns.push({ message: text, trace: body.trace });
-    $("chat-input").value = "";
-    $("chat-file").value = "";
-    $("chat-file-name").textContent = "";
+    agent.turns.push({ message: shown, trace: body.trace });
+    return true;
   } catch (error) {
     agent.problem = error.message;
+    return false;
   } finally {
     agent.busy = false;
     agent.pending = null;
-    $("chat-send").disabled = false;
     renderAgent();
+  }
+}
+
+async function sendMessage(text) {
+  const file = $("chat-file").files[0];
+  text = (text ?? "").trim() || (file ? tr("agent.attached", { name: file.name }) : "");
+  if (!text) return;
+  if (await sendTurn(text, { message: text }, file)) {
+    $("chat-input").value = "";
+    $("chat-file").value = "";
+    $("chat-file-name").textContent = "";
   }
 }
 

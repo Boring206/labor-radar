@@ -8,13 +8,14 @@ from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Query, Up
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from labor_radar import extraction, report
 from labor_radar.agent import questions
 from labor_radar.agent.case import Case, Phase, fact_table
 from labor_radar.agent.llm import LLM, GeminiLLM
 from labor_radar.agent.loop import TurnResult, run_turn
+from labor_radar.agent.questions import Tap
 from labor_radar.agent.tools import Attachment
 from labor_radar.engine import assess
 from labor_radar.i18n import CATALOGS, REFERENCE, languages, resolve
@@ -76,8 +77,15 @@ async def extract(file: UploadFile = File(...)) -> dict:
 
 class TurnIn(BaseModel):
     case: Case = Field(default_factory=Case)
-    message: str = Field(min_length=1, max_length=2000)
+    message: str = Field("", max_length=2000)
+    tap: Tap | None = None
     lang: str = Field(REFERENCE, max_length=20)
+
+    @model_validator(mode="after")
+    def _one_input(self) -> "TurnIn":
+        if bool(self.message.strip()) == (self.tap is not None):
+            raise ValueError("send either a message or a tapped option")
+        return self
 
 
 class ConfirmIn(BaseModel):
@@ -109,7 +117,7 @@ def agent_turn(payload: str = Form(...), file: UploadFile | None = File(None),
         if len(data) > extraction.MAX_BYTES:
             raise HTTPException(status_code=413, detail="file is larger than 8 MB")
         attachment = Attachment(data, file.content_type or "", file.filename or "")
-    return run_turn(turn.case, turn.message, llm, turn.lang, attachment)
+    return run_turn(turn.case, turn.tap or turn.message, llm, turn.lang, attachment)
 
 
 @app.post("/api/agent/confirm")

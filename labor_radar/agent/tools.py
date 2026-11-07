@@ -12,12 +12,13 @@ from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
+from decimal import Decimal
 from functools import cache
 from pathlib import Path
 from typing import Any
 
 from labor_radar import extraction, paperwork, referrals, report
-from labor_radar.agent import questions
+from labor_radar.agent import guard, questions
 from labor_radar.agent.case import (
     FIELDS,
     MAX_SHIFTS,
@@ -105,9 +106,17 @@ def _squash(text: str) -> str:
 def _quote_problem(quote: Any, case: Case) -> str | None:
     if not isinstance(quote, str) or not quote.strip():
         return "quote is required: copy the words of the worker's message that state this fact"
-    if len(quote) > 300 or _squash(quote) not in _squash(case.user_text()):
-        return "quote must be copied exactly from something the worker wrote; do not paraphrase or translate it"
+    if len(quote) > 300 or _squash(quote) not in _squash(case.typed_now()):
+        return ("quote must be copied exactly from the message the worker just typed; do not paraphrase or "
+                "translate it, and do not quote an earlier message or a tapped option")
     return None
+
+
+def _number_problem(path: str, value: Any, quote: str) -> str | None:
+    """A number is the worker's only if the quoted words say that number."""
+    if type(value) not in (int, float) or ("num", Decimal(str(value)).normalize()) in guard.tokens(quote):
+        return None
+    return f"{path} {value} is not in the quote; quote the worker's words that give this number"
 
 
 def _add_shifts(case: Case, value: Any, quote: str) -> str | None:
@@ -169,19 +178,38 @@ def _apply_fact(case: Case, item: Any) -> str | None:
         parsed = spec.parse(value)
     except ValueError as error:
         return f"{path} {error}"
-    put_path(case.draft, path, parsed)
-    case.provenance[path] = Provenance(source=Source.USER, quote=quote.strip())
+    if problem := _number_problem(path, parsed, quote):
+        return problem
+    _store(case, path, parsed, quote.strip())
+    return None
+
+
+def _store(case: Case, path: str, value: Any, quote: str) -> None:
+    put_path(case.draft, path, value)
+    case.provenance[path] = Provenance(source=Source.USER, quote=quote)
     question = questions.BY_PATH.get(path)
     if question and question.id not in case.answered:
         case.answered.append(question.id)
-    return None
+
+
+def _settled(before: Case, after: Case) -> Case:
+    return after.changed() if facts_state(before) != facts_state(after) else after
+
+
+def apply_tap(case: Case, tap: questions.Tap, lang: str) -> tuple[Case, str]:
+    """The worker's tapped answer, stored without the model and quoted in the option's words. Returns the
+    case and the line the history records for the worker."""
+    question = questions.BY_ID[tap.question]
+    label = questions.option_label(lang, question, tap.option)
+    tapped = case.model_copy(deep=True)
+    _store(tapped, question.path, tap.option, label)
+    return _settled(case, tapped), f"{questions.question_text(lang, question)} → {label}"
 
 
 def _outcome(before: Case, after: Case, result: dict, lang: str) -> tuple[Case, dict]:
     """The result a fact-changing tool returns: what the case now holds and what is still open, so the
     model need not ask again."""
-    if facts_state(before) != facts_state(after):
-        after = after.changed()
+    after = _settled(before, after)
     result["phase"] = questions.phase(after).value
     if problems := gaps(after):
         result["gaps"] = problems
