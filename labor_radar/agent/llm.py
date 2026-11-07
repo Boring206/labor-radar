@@ -78,6 +78,9 @@ class GeminiLLM:
         if tools:
             body["tools"] = [{"functionDeclarations": tools}]
             body["toolConfig"] = {"functionCallingConfig": _calling_mode(calls)}
+            if calls not in (AUTO, NONE, ANY):
+                # a forced single tool plus a thinking budget made gemini-2.5-flash stall for minutes; the step only picks a call
+                body["generationConfig"]["thinkingConfig"] = {"thinkingBudget": 0}
         data = self._post(body, key)
         candidates = data.get("candidates") or []
         if not candidates:

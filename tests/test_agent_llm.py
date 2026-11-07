@@ -71,6 +71,16 @@ def test_one_tool_can_be_forced(monkeypatch):
         "functionCallingConfig": {"mode": "ANY", "allowedFunctionNames": ["next_questions"]}}
 
 
+def test_a_forced_tool_step_does_not_think(monkeypatch):
+    """Gemini 2.5 Flash stalled for minutes on a step that forces one tool while it thinks (2026-11-08);
+    a forced step only picks a call, so it runs without a thinking budget. Free-choice steps keep thinking."""
+    sent = fake_post(monkeypatch, reply([{"functionCall": {"name": "next_questions"}}]), reply([{"text": "ok"}]))
+    GeminiLLM().step("s", USER, DECL, calls="next_questions")
+    GeminiLLM().step("s", USER, DECL, calls="auto")
+    assert sent[0]["json"]["generationConfig"]["thinkingConfig"] == {"thinkingBudget": 0}
+    assert "thinkingConfig" not in sent[1]["json"]["generationConfig"]
+
+
 def test_function_calls_are_read_and_the_content_object_is_kept_whole(monkeypatch):
     part = {"functionCall": {"name": "next_questions", "args": {"x": 1}}, "thoughtSignature": "c2ln"}
     fake_post(monkeypatch, reply([part]))
