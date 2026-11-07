@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from labor_radar import extraction
 from labor_radar.agent import questions, tools
-from labor_radar.agent.case import Case, Phase, Source, gaps, materialize, with_turn
+from labor_radar.agent.case import Case, Phase, Source, gaps, get_path, materialize, with_turn
 from labor_radar.agent.tools import Attachment, Ctx
 from labor_radar.intake import parse_record
 
@@ -269,6 +269,52 @@ def test_a_photo_does_not_overwrite_what_the_worker_said(monkeypatch):
     read, result = tools.call(case, "read_document", {}, ctx(attachment=Attachment(b"x", "image/png")))
     assert read.draft["employment"]["agreed_wage"] == 185
     assert result["conflicts"] == [{"path": "employment.agreed_wage", "kept": 185, "photo": 150}]
+
+
+PHOTO_FILE = Attachment(b"x", "image/png")
+
+
+@pytest.mark.parametrize("fields, path", [
+    ({"monthly_wage": 1_500_000}, "employment.agreed_wage"),
+    ({"hourly_wage": float("inf")}, "employment.agreed_wage"),
+    ({"gross_pay": 12_000_000}, "payslips.gross_pay"),
+])
+def test_a_photo_value_out_of_range_is_refused_and_the_rest_is_kept(monkeypatch, fields, path):
+    fake_extract(monkeypatch, photo(shifts=[{"date": "2026-10-07", "start": "17:00", "end": "23:00"}], **fields))
+    read, result = tools.call(said(Case()), "read_document", {}, ctx(attachment=PHOTO_FILE))
+    assert [r["path"] for r in result["rejected"]] == [path]
+    assert get_path(read.draft, path) is None and get_path(read.draft, "employment.pay_basis") is None
+    assert [s["date"] for s in read.draft["shifts"]] == ["2026-10-07"]
+
+
+def test_a_photo_wage_never_pairs_with_the_pay_type_the_worker_gave(monkeypatch):
+    fake_extract(monkeypatch, photo(document_type="payslip", monthly_wage=28000))
+    case = said(Case(), "我是領時薪的")
+    case, _ = tools.call(case, "set_facts", {"facts": [fact("employment.pay_basis", "hourly", "我是領時薪的")]}, ctx())
+    read, result = tools.call(case, "read_document", {}, ctx(attachment=PHOTO_FILE))
+    assert read.draft["employment"] == {"pay_basis": "hourly"}
+    assert {c["path"] for c in result["conflicts"]} == {"employment.pay_basis", "employment.agreed_wage"}
+
+
+def test_a_photo_pay_type_never_pairs_with_the_wage_the_worker_gave(monkeypatch):
+    fake_extract(monkeypatch, photo(document_type="payslip", monthly_wage=28000))
+    case = said(Case(), "我拿185")
+    case, _ = tools.call(case, "set_facts", {"facts": [fact("employment.agreed_wage", 185, "我拿185")]}, ctx())
+    read, result = tools.call(case, "read_document", {}, ctx(attachment=PHOTO_FILE))
+    assert read.draft["employment"] == {"agreed_wage": 185}
+    assert read.provenance["employment.agreed_wage"].source is Source.USER
+    assert {c["path"] for c in result["conflicts"]} == {"employment.pay_basis", "employment.agreed_wage"}
+
+
+def test_a_photo_pay_period_never_pairs_with_a_date_the_worker_gave(monkeypatch):
+    fake_extract(monkeypatch, photo(document_type="payslip", gross_pay=8000,
+                                    pay_period_start="2026-10-05", pay_period_end="2026-10-18"))
+    case = said(Case(), "從 2026-10-01 開始算")
+    case, _ = tools.call(case, "set_facts", {"facts": [fact("period.start", "2026-10-01", "從 2026-10-01 開始算")]}, ctx())
+    read, result = tools.call(case, "read_document", {}, ctx(attachment=PHOTO_FILE))
+    assert read.draft["period"] == {"start": "2026-10-01"}
+    assert "payslips" not in read.draft
+    assert {c["path"] for c in result["conflicts"]} >= {"period.start", "period.end"}
 
 
 def test_a_photo_that_cannot_be_read_is_an_error_the_model_can_report(monkeypatch):
