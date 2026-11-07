@@ -42,6 +42,20 @@ def test_a_turn_returns_the_reply_the_case_and_what_the_agent_did(scripted):
     assert "run_check" not in scripted.requests[0].tools
 
 
+def test_the_trace_says_the_guard_stepped_in_but_not_what_it_blocked(scripted):
+    scripted.script += [
+        Step.calling(("set_facts", {"facts": [{"path": "employment.agreed_wage", "value": 185, "quote": "時薪185"}]})),
+        Step.saying("你的時薪 190 元，老闆這樣違法。"),
+        Step.saying("你的時薪是 185 元，對嗎？"),
+    ]
+    body = turn(Case(), "時薪185").json()
+    assert body["reply"] == "你的時薪是 185 元，對嗎？"
+    [event] = [e for e in body["trace"] if e["kind"] == "guard"]
+    assert event == {"kind": "guard", "action": "rewritten", "problems": ["number", "term"]}
+    shown = json.dumps(body["trace"], ensure_ascii=False)
+    assert "190" not in shown and "違法" not in shown
+
+
 def test_the_case_makes_the_round_trip_unchanged(scripted, sample):
     case = agent_case(sample)
     scripted.script.append(Step.saying("請檢查資料表，沒問題就按確認資料。"))
