@@ -1,6 +1,7 @@
 """The agent over HTTP: the injected model, the untrusted case, and the confirm button."""
 
 import json
+from datetime import date, timedelta
 
 import pytest
 from conftest import agent_case
@@ -63,6 +64,55 @@ def test_the_case_makes_the_round_trip_unchanged(scripted, sample):
     sent_back = Case.model_validate(body["case"])
     assert sent_back.draft == case.draft and sent_back.confirmed is False
     assert body["phase"] == "confirm"
+
+
+def _days(count):
+    return [(date(2026, 1, 1) + timedelta(days=i)).isoformat() for i in range(count)]
+
+
+def _many_shifts_said():
+    batches = [[{"date": d, "start": "09:00", "end": "17:00"} for d in _days(1100)[i * 100:(i + 1) * 100]] for i in range(11)]
+    return Case(), "我每天都上班", [Step.calling(("set_facts", {"facts": [
+        {"path": "shifts", "value": b, "quote": "我每天都上班"} for b in batches]})), Step.saying("好")], {}
+
+
+def _many_shifts_photographed(monkeypatch):
+    from labor_radar import extraction
+
+    shifts = [{"date": d, "start": "09:00", "end": "17:00"} for d in _days(1000)]
+    monkeypatch.setattr(extraction, "extract", lambda data, mime, year: extraction.Draft.model_validate(
+        {"document_type": "schedule", "unreadable": [], "shifts": shifts, "worker_name": "名" * 300}))
+    return Case(), "班表", [Step.calling(("read_document", {})), Step.saying("好")], {"file": ("a.png", PNG, "image/png")}
+
+
+def _a_long_report():
+    shifts = [{"date": d, "start": "08:00", "end": "22:00"} for d in _days(366)][:200]
+    job = {"pay_basis": "hourly", "agreed_wage": 150, "relationship": "employee", "shift_system": "fixed",
+           "special_hours_arrangement": "no", "responsibility_system": "no", "overtime_consent": "no",
+           "week_starts_on": "monday"}
+    case = Case(draft={"employment": job, "shifts": shifts}, confirmed=True)
+    return case, "結果", [Step.calling(("run_check", {}), ("draft_mediation", {})), Step.saying("好")], {}
+
+
+def _a_reply_longer_than_history_keeps():
+    return Case(), "hi", [Step.calling(("next_questions", {})), Step.saying("請告訴我時薪。" * 2000)], {}
+
+
+@pytest.mark.parametrize("extreme", ["many_shifts_said", "many_shifts_photographed", "a_long_report",
+                                     "a_reply_longer_than_history_keeps"])
+def test_every_case_the_server_returns_is_accepted_on_the_next_turn(scripted, monkeypatch, extreme):
+    builders = {"many_shifts_said": _many_shifts_said, "many_shifts_photographed": lambda: _many_shifts_photographed(monkeypatch),
+                "a_long_report": _a_long_report, "a_reply_longer_than_history_keeps": _a_reply_longer_than_history_keeps}
+    case, message, steps, files = builders[extreme]()
+    scripted.script += steps
+    first = turn(case, message, **files)
+    assert first.status_code == 200
+    returned = first.json()["case"]
+    assert Case.model_validate_json(json.dumps(returned)).model_dump(mode="json") == returned
+    scripted.script += [Step.calling(("next_questions", {})), Step.saying("好")] if not returned["confirmed"] \
+        else [Step.saying("好")]
+    again = client.post("/api/agent/turn", data={"payload": json.dumps({"case": returned, "message": "然後呢"})})
+    assert again.status_code == 200
 
 
 def test_a_photo_is_read_through_the_attachment(scripted, monkeypatch):

@@ -1,18 +1,22 @@
 """The tools are the model's only hands. These tests call them as the model would, including badly."""
 
-from datetime import time
+import json
+from collections import Counter
+from datetime import date, time, timedelta
 
 import pytest
 from conftest import agent_case, make
 from pydantic import ValidationError
 
-from labor_radar import extraction
+from labor_radar import extraction, report
 from labor_radar.agent import questions, tools
 from labor_radar.agent.case import Case, Phase, Source, gaps, get_path, materialize, with_turn
 from labor_radar.agent.tools import Attachment, Ctx
+from labor_radar.engine import assess
 from labor_radar.intake import parse_record
 
 WEEK_ = ("2026-10-12", "2026-10-18")
+SHIFT_CAP = 200
 SAID = "我在手搖飲打工，時薪185，10/7 17:00到23:00。我不知道老闆算不算輪班制"
 
 
@@ -182,6 +186,40 @@ def test_adding_the_same_shift_twice_leaves_one():
     once, _ = tools.call(case, "set_facts", {"facts": [fact("shifts", shift, "10/7 17:00-23:00")]}, ctx())
     twice, _ = tools.call(once, "set_facts", {"facts": [fact("shifts", shift, "10/7 17:00-23:00")]}, ctx())
     assert twice.draft["shifts"] == once.draft["shifts"] and len(twice.draft["shifts"]) == 1
+
+
+def days(count, start=date(2026, 1, 1)):
+    return [(start + timedelta(days=i)).isoformat() for i in range(count)]
+
+
+def test_set_facts_never_stores_more_shifts_than_a_case_can_hold():
+    case = said(Case(), "我每天都上班")
+    batches = [[{"date": d, "start": "09:00", "end": "17:00"} for d in days(100, date(2024, 1, 1) + timedelta(days=100 * i))]
+               for i in range(11)]
+    stored, result = tools.call(case, "set_facts", {"facts": [fact("shifts", b, "我每天都上班") for b in batches]}, ctx())
+    assert len(stored.draft["shifts"]) == SHIFT_CAP
+    assert len(result["applied"]) == SHIFT_CAP // 100 and all(str(SHIFT_CAP) in r["error"] for r in result["rejected"])
+    assert Case.model_validate_json(stored.model_dump_json()) == stored
+
+
+def test_a_photo_with_more_shifts_than_a_case_can_hold_adds_none_and_says_why(monkeypatch):
+    fake_extract(monkeypatch, photo(shifts=[{"date": d, "start": "09:00", "end": "17:00"} for d in days(SHIFT_CAP + 1)]))
+    read, result = tools.call(said(Case()), "read_document", {}, ctx(attachment=PHOTO_FILE))
+    assert "shifts" not in read.draft
+    assert [r["path"] for r in result["rejected"]] == ["shifts"] and str(SHIFT_CAP) in result["rejected"][0]["error"]
+
+
+def test_the_models_view_of_a_long_report_lists_a_few_findings_per_rule_and_counts_the_rest():
+    record = make([(d, "08:00", "22:00") for d in days(SHIFT_CAP)], days(SHIFT_CAP)[0], days(SHIFT_CAP)[-1], wage=150)
+    reported, view = tools.call(agent_case(record).model_copy(update={"confirmed": True}), "run_check", {}, ctx())
+    full = report.render(assess(parse_record(materialize(reported))), "zh-TW")
+    assert view["violation_count"] == len(full["violations"])
+    for group in ("violations", "needs_human", "notes"):
+        listed = Counter(item["rule_id"] for item in view[group])
+        assert max(listed.values(), default=0) <= 3
+        assert listed + Counter(view.get("not_listed", {}).get(group, {})) == Counter(i["rule_id"] for i in full[group])
+        assert all(len(item["dates"]) <= 10 for item in view[group])
+    assert len(json.dumps(view, ensure_ascii=False)) < 40_000
 
 
 def test_a_shift_can_be_taken_back():
