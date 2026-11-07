@@ -292,6 +292,28 @@ def fake_extract(monkeypatch, draft):
     monkeypatch.setattr(extraction, "extract", lambda data, mime, year: draft)
 
 
+def test_saying_the_pay_was_self_recorded_before_giving_it_does_not_block_the_check():
+    case = said(agent_case(make([("2026-10-12", "09:00", "13:00")], *WEEK_)), "錢是我自己記的")
+    case = case.model_copy(update={"draft": {k: v for k, v in case.draft.items() if k != "payslips"}})
+    stored, result = tools.call(case, "set_facts", {"facts": [fact("payslips.self_reported", True, "錢是我自己記的")]}, ctx())
+    assert gaps(stored) == [] and result["phase"] != "gather"
+
+
+def _paid_label(case):
+    reported, view = tools.call(case.model_copy(update={"confirmed": True}), "run_check", {}, ctx())
+    return view["claim"]["paid_label"]
+
+
+def test_gross_pay_typed_in_the_chat_is_reported_as_the_workers_own_record(monkeypatch):
+    base = agent_case(make([("2026-10-12", "09:00", "13:00")], *WEEK_))
+    base = base.model_copy(update={"draft": {k: v for k, v in base.draft.items() if k != "payslips"}})
+    typed, _ = tools.call(said(base, "這週應發 700 元"), "set_facts", {"facts": [fact("payslips.gross_pay", 700, "應發 700 元")]}, ctx())
+    assert _paid_label(typed) == "你自己記錄的應發金額"
+    fake_extract(monkeypatch, photo(document_type="payslip", gross_pay=700))
+    read, _ = tools.call(said(base), "read_document", {}, ctx(attachment=PHOTO_FILE))
+    assert _paid_label(read) == "薪資單上的應發金額"
+
+
 def test_reading_a_photo_needs_an_attachment_and_says_so():
     case = said(Case())
     assert "read_document" not in names(case)
