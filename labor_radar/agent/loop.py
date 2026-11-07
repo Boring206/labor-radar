@@ -147,23 +147,31 @@ def _guarded(case: Case, llm: LLM, ctx: Ctx, contents: list[dict], step: Step, t
     problems = guard.check(step.text, case, report_now, grounded) if step.text else [guard.EMPTY]
     if not problems:
         return step.text
-    event = {"kind": "guard", "text": _brief(step.text, 300),
-             "problems": [{"kind": p.kind, "token": p.token, "message": p.message} for p in problems]}
+    detail: dict = {"text": _brief(step.text, 300),
+                    "problems": [{"kind": p.kind, "token": p.token, "message": p.message} for p in problems]}
+    event = {"kind": "guard", "problems": sorted({p.kind for p in problems}), "detail": detail}
     if step.text:
         retry = llm.step(system_prompt(case, phase, ctx.lang, ctx.today),
                          _contents_with_reply(contents, step, problems),
                          [tool.declaration for tool in tools.available(case, ctx)], calls=NONE)
         again = guard.check(retry.text, case, report_now, grounded) if retry.text else [guard.EMPTY]
         if not again:
-            trace.append({**event, "action": "rewritten", "rewrite": _brief(retry.text, 300)})
+            detail["rewrite"] = _brief(retry.text, 300)
+            trace.append({**event, "action": "rewritten"})
             return retry.text
-        event["after_rewrite"] = [{"kind": p.kind, "token": p.token} for p in again]
+        detail["after_rewrite"] = [{"kind": p.kind, "token": p.token} for p in again]
     trace.append({**event, "action": "fallback"})
     return None
 
 
+def _shown(event: dict) -> dict:
+    """The worker reads the trace, so it never carries words the guard kept from them."""
+    return {k: v for k, v in event.items() if k != "detail"}
+
+
 def run_turn(case: Case, message: str, llm: LLM, lang: str, attachment: Attachment | None = None,
-             max_steps: int = MAX_STEPS) -> TurnResult:
+             max_steps: int = MAX_STEPS, debug: bool = False) -> TurnResult:
+    """`debug` keeps what the guard blocked in the trace, for a developer's transcript. Never for the web."""
     lang = resolve(lang)
     case = with_turn(case, "user", message)
     ctx = Ctx(lang=lang, attachment=attachment)
@@ -184,7 +192,7 @@ def run_turn(case: Case, message: str, llm: LLM, lang: str, attachment: Attachme
     if phase is Phase.REPORT and case.reported:
         view = report.render(assess(parse_record(materialize(case))), lang)
     return TurnResult(
-        case=case, reply=reply, trace=trace, phase=phase,
+        case=case, reply=reply, trace=trace if debug else [_shown(e) for e in trace], phase=phase,
         questions=questions.describe(case, lang) if phase in (Phase.CLARIFY, Phase.CONFIRM)
         else {"questions": [], "not_asked": [], "not_asked_reason": ""},
         facts=[row.as_dict() for row in fact_table(case, lang)], report_view=view,

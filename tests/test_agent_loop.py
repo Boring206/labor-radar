@@ -158,10 +158,10 @@ def test_a_made_up_number_is_sent_back_once_and_the_rewrite_is_used():
         Step.saying("你的時薪 190 元，對嗎？"),
         Step.saying("你的時薪是 185 元，對嗎？"),
     ])
-    result = run_turn(Case(), "時薪185", llm, "zh-TW")
+    result = run_turn(Case(), "時薪185", llm, "zh-TW", debug=True)
     assert result.reply == "你的時薪是 185 元，對嗎？"
     [event] = [e for e in result.trace if e["kind"] == "guard"]
-    assert event["action"] == "rewritten" and event["problems"][0]["token"] == "190"
+    assert event["action"] == "rewritten" and event["detail"]["problems"][0]["token"] == "190"
     retry = llm.requests[-1]
     assert retry.calls == "none"
     assert "190" in retry.contents[-1]["parts"][0]["text"] and retry.contents[-2]["parts"][0]["text"] == "你的時薪 190 元，對嗎？"
@@ -174,14 +174,14 @@ def test_two_bad_replies_in_a_row_fall_back_to_the_fixed_question():
         Step.saying("你的時薪 190 元。"),
         Step.saying("你的時薪是 195 元。"),
     ])
-    result = run_turn(Case(), OPENING, llm, "zh-TW")
+    result = run_turn(Case(), OPENING, llm, "zh-TW", debug=True)
     assert result.phase is Phase.CLARIFY
     top = result.questions["questions"][0]
     assert result.reply.startswith(top["question"])
     assert all(option["label"] in result.reply for option in top["options"])
     assert "190" not in result.reply and "195" not in result.reply
     [event] = [e for e in result.trace if e["kind"] == "guard"]
-    assert event["action"] == "fallback" and event["after_rewrite"][0]["token"] == "195"
+    assert event["action"] == "fallback" and event["detail"]["after_rewrite"][0]["token"] == "195"
 
 
 def test_judging_words_are_refused_before_the_report():
@@ -190,9 +190,9 @@ def test_judging_words_are_refused_before_the_report():
         Step.saying("老闆這樣違法。"),
         Step.saying("我還需要知道你上班的日期和時段。"),
     ])
-    result = run_turn(Case(), "時薪185", llm, "zh-TW")
+    result = run_turn(Case(), "時薪185", llm, "zh-TW", debug=True)
     assert result.reply == "我還需要知道你上班的日期和時段。"
-    assert [(p["kind"], p["token"]) for p in result.trace[-1]["problems"]] == [("term", "違法")]
+    assert [(p["kind"], p["token"]) for p in result.trace[-1]["detail"]["problems"]] == [("term", "違法")]
 
 
 def test_the_same_words_are_fine_once_the_report_is_out():
@@ -223,9 +223,9 @@ def test_confirmed_facts_without_a_check_are_not_a_report():
 
 def test_in_the_report_phase_a_wrong_amount_is_still_caught():
     llm = ScriptedLLM([Step.calling(("run_check", {})), Step.saying("你被少給了 5,000 元。"), Step.saying("報告有 1 項。")])
-    result = run_turn(confirmed_case(), "結果", llm, "zh-TW")
+    result = run_turn(confirmed_case(), "結果", llm, "zh-TW", debug=True)
     assert result.reply == "報告有 1 項。"
-    assert result.trace[-1]["problems"][0]["token"] == "5,000"
+    assert result.trace[-1]["detail"]["problems"][0]["token"] == "5,000"
 
 
 def test_a_reply_in_the_report_phase_that_never_recovers_shows_the_engine_summary():
@@ -257,7 +257,7 @@ def test_a_model_that_never_stops_calling_tools_is_cut_off():
 
 def test_an_empty_reply_gets_the_fixed_text():
     result = run_turn(Case(), "hi", ScriptedLLM([Step.saying("")]), "zh-TW")
-    assert result.trace[-1]["problems"][0]["kind"] == "empty"
+    assert result.trace[-1]["problems"] == ["empty"]
     assert result.reply == "請告訴我時薪或月薪是多少，並說明上班的日期和時段，或附上班表照片。"
 
 

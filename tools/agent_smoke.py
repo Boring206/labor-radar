@@ -55,10 +55,11 @@ def render_turn(index: int, message: str, attached: str | None, result: TurnResu
             for rejected in event.get("rejected", []):
                 lines.append(f"  - 被拒絕的值：`{rejected['path']} = {rejected['value']}`，原因：{rejected['error']}")
         elif event["kind"] == "guard":
-            lines.append(f"- 護欄（{event['action']}）攔下：「{event['text']}」")
-            lines += [f"  - {p['message']}" for p in event["problems"]]
-            if event.get("rewrite"):
-                lines.append(f"  - 重寫後：「{event['rewrite']}」")
+            detail = event["detail"]
+            lines.append(f"- 護欄（{event['action']}）攔下：「{detail['text']}」")
+            lines += [f"  - {p['message']}" for p in detail["problems"]]
+            if detail.get("rewrite"):
+                lines.append(f"  - 重寫後：「{detail['rewrite']}」")
         else:
             lines.append(f"- {event['kind']} {event.get('message', '')}")
     lines += ["", f"**助理**：{result.reply}", "", f"階段：`{result.phase.value}`", ""]
@@ -106,7 +107,7 @@ def main() -> int:
         else:
             break
         turn += 1
-        result = run_turn(case, message, llm, "zh-TW", attachment)
+        result = run_turn(case, message, llm, "zh-TW", attachment, debug=True)
         case = result.case
         out += render_turn(turn, message, attachment.name if attachment else None, result)
 
@@ -118,7 +119,7 @@ def main() -> int:
         case = case.model_copy(update={"confirmed": True})
         for message in ("我確認資料沒問題，請告訴我結果。", "第 35 條是什麼意思？", "請幫我寫勞資爭議調解申請書。"):
             turn += 1
-            result = run_turn(case, message, llm, "zh-TW")
+            result = run_turn(case, message, llm, "zh-TW", debug=True)
             case = result.case
             out += render_turn(turn, message, None, result)
         out += ["## 規則引擎的結果（最後一次檢查）", "", *[f"- {line}" for line in result.report_view["summary"]], ""]

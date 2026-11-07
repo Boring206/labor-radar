@@ -167,7 +167,6 @@ table.facts-table tr.missing td.value { color: var(--violation); font-weight: 60
 .ev code { font-size: .8rem; word-break: break-all; color: var(--muted); display: block; margin-top: .15rem; }
 .ev ul { margin: .25rem 0 0; padding-left: 1.2rem; }
 .ev .bad { color: var(--violation); }
-.ev del { color: var(--violation); }
 #agent-result { margin-top: 1rem; }
 
 .facts-scroll { max-height: 560px; overflow-y: auto; margin-top: .5rem; border-top: 1px solid var(--line); }

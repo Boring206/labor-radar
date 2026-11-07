@@ -72,9 +72,7 @@ function traceEvent(event) {
     const action = event.action === "rewritten" ? tr("agent.trace.rewrite") : tr("agent.trace.fallback");
     return el("div", { class: "ev guard" },
       el("div", { class: "head" }, el("span", { class: "tool", text: tr("agent.trace.guard") }), el("span", { class: "no", text: action })),
-      el("del", { text: event.text }),
-      el("ul", {}, ...event.problems.map((p) => el("li", { class: "bad", text: p.message }))),
-      event.rewrite ? el("code", { text: event.rewrite }) : null);
+      el("ul", {}, ...event.problems.map((kind) => el("li", { class: "bad", text: tr(`agent.trace.problem.${kind}`) }))));
   }
   const key = event.kind === "llm_error" ? "agent.trace.llm_error" : "agent.trace.limit";
   return el("div", { class: "ev error" }, el("span", { class: "no", text: tr(key) }), event.message ? el("code", { text: event.message }) : null);
