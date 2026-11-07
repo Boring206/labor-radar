@@ -1,4 +1,4 @@
-const agent = { case: emptyCase(), last: null, turns: [], busy: false, shownReport: false };
+const agent = { case: emptyCase(), last: null, turns: [], busy: false, shownReport: false, epoch: 0 };
 
 function emptyCase() {
   return { draft: {}, provenance: {}, answered: [], confirmed: false, history: [], reported: false };
@@ -109,9 +109,11 @@ function describeFailure(body, status) {
   return tr("agent.error", { message: typeof detail === "string" ? detail : JSON.stringify(detail) });
 }
 
-// A turn the worker typed or tapped. Only a typed turn carries the selected file.
+// A turn the worker typed, tapped or confirmed. Only a typed turn carries the selected file. A reply that
+// arrives after 重新開始 belongs to the old conversation, so the epoch check drops it.
 async function sendTurn(shown, input, file = null) {
   if (agent.busy) return false;
+  const epoch = agent.epoch;
   agent.busy = true;
   agent.problem = null;
   agent.pending = shown;
@@ -122,18 +124,21 @@ async function sendTurn(shown, input, file = null) {
   try {
     const response = await fetch("/api/agent/turn", { method: "POST", body: form });
     const body = await response.json().catch(() => null);
+    if (epoch !== agent.epoch) return false;
     if (!response.ok) throw new Error(describeFailure(body, response.status));
     agent.case = body.case;
     agent.last = body;
     agent.turns.push({ message: shown, trace: body.trace });
     return true;
   } catch (error) {
-    agent.problem = error.message;
+    if (epoch === agent.epoch) agent.problem = error.message;
     return false;
   } finally {
-    agent.busy = false;
-    agent.pending = null;
-    renderAgent();
+    if (epoch === agent.epoch) {
+      agent.busy = false;
+      agent.pending = null;
+      renderAgent();
+    }
   }
 }
 
@@ -149,21 +154,37 @@ async function sendMessage(text) {
 }
 
 async function confirmFacts() {
+  if (agent.busy) return;
+  const epoch = agent.epoch;
   agent.busy = true;
+  agent.problem = null;
   renderAgent();
-  const response = await fetch(`/api/agent/confirm?lang=${encodeURIComponent(lang)}`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ case: agent.case }),
-  });
-  const body = await response.json().catch(() => null);
-  agent.busy = false;
-  if (!response.ok) { agent.problem = describeFailure(body, response.status); renderAgent(); return; }
+  let body = null;
+  try {
+    const response = await fetch(`/api/agent/confirm?lang=${encodeURIComponent(lang)}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ case: agent.case }),
+    });
+    body = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(describeFailure(body, response.status));
+  } catch (error) {
+    if (epoch === agent.epoch) agent.problem = error.message;
+    body = null;
+  } finally {
+    if (epoch === agent.epoch) {
+      agent.busy = false;
+      renderAgent();
+    }
+  }
+  if (!body || epoch !== agent.epoch) return;
   agent.case = body.case;
   agent.last = { ...agent.last, phase: body.phase, facts: body.facts };
-  await sendMessage(tr("agent.confirmed_message"));
+  const text = tr("agent.confirmed_message");
+  await sendTurn(text, { message: text });
 }
 
 function resetAgent() {
-  Object.assign(agent, { case: emptyCase(), last: null, turns: [], problem: null, pending: null, shownReport: false });
+  Object.assign(agent, { case: emptyCase(), last: null, turns: [], problem: null, pending: null, shownReport: false,
+    busy: false, epoch: agent.epoch + 1 });
   renderAgent();
 }
 
