@@ -297,6 +297,14 @@ def test_a_photo_value_out_of_range_is_refused_and_the_rest_is_kept(monkeypatch,
     assert [s["date"] for s in read.draft["shifts"]] == ["2026-10-07"]
 
 
+def test_a_photo_shift_on_an_impossible_date_is_refused_and_the_others_are_kept(monkeypatch):
+    fake_extract(monkeypatch, photo(shifts=[{"date": "9999-12-31", "start": "22:00", "end": "02:00"},
+                                            {"date": "2026-10-07", "start": "17:00", "end": "23:00"}]))
+    read, result = tools.call(said(Case()), "read_document", {}, ctx(attachment=PHOTO_FILE))
+    assert [r["value"] for r in result["rejected"]] == ["9999-12-31"]
+    assert [s["date"] for s in read.draft["shifts"]] == ["2026-10-07"]
+
+
 def test_a_photo_wage_never_pairs_with_the_pay_type_the_worker_gave(monkeypatch):
     fake_extract(monkeypatch, photo(document_type="payslip", monthly_wage=28000))
     case = said(Case(), "我是領時薪的")

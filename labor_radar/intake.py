@@ -3,7 +3,7 @@
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from fractions import Fraction
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
@@ -25,6 +25,10 @@ from labor_radar.model import (
 
 UNKNOWN_WEEKDAY = "unknown"
 MAX_PERIOD_DAYS = 400
+EARLIEST = date(2000, 1, 1)
+LATEST = date(2100, 12, 31)
+"""A date outside these is a typo. Inside them, the engine's overnight and week arithmetic cannot overflow."""
+Day = Annotated[date, Field(ge=EARLIEST, le=LATEST)]
 
 
 class IntakeError(ValueError):
@@ -58,8 +62,8 @@ class EmploymentIn(_Strict):
 
 
 class PeriodIn(_Strict):
-    start: date
-    end: date
+    start: Day
+    end: Day
 
     @model_validator(mode="after")
     def _ordered(self):
@@ -71,7 +75,7 @@ class PeriodIn(_Strict):
 
 
 class ShiftIn(_Strict):
-    date: date
+    date: Day
     start: time
     end: time
     break_minutes: int = Field(0, ge=0, le=600)

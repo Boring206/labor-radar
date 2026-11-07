@@ -239,8 +239,12 @@ def read_document(case: Case, args: dict, ctx: Ctx) -> tuple[Case, dict]:
     conflicts: list = []
     rejected: list = []
     for raw in draft.shifts:
-        shift = normalize_shift({"date": raw.date.isoformat(), "start": raw.start.strftime("%H:%M"),
-                                 "end": raw.end.strftime("%H:%M"), "break_minutes": raw.break_minutes or 0})
+        try:
+            shift = normalize_shift({"date": raw.date.isoformat(), "start": raw.start.strftime("%H:%M"),
+                                     "end": raw.end.strftime("%H:%M"), "break_minutes": raw.break_minutes or 0})
+        except ValueError as error:
+            rejected.append({"path": "shifts", "value": raw.date.isoformat(), "error": str(error)})
+            continue
         existing = new.provenance.get(shift_key(shift))
         if existing and existing.source is Source.USER:
             continue
