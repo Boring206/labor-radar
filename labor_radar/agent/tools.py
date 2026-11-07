@@ -443,7 +443,8 @@ TOOLS: dict[str, Tool] = {tool.name: tool for tool in (
          "the facts. It only transcribes. Call it once when a file is attached.",
          _object({}), read_document, needs_attachment=True),
     Tool("set_facts",
-         "Store facts the worker stated. quote must be copied exactly from the worker's own words. Enum "
+         "Store facts the worker stated in this message. quote must be copied exactly from the worker's words "
+         "in this message, and for a number it must contain that number. Enum "
          "fields accept only their listed values. A shift is {date: YYYY-MM-DD, start: HH:MM, end: HH:MM, "
          "break_minutes}; an end earlier than the start means the shift ends the next day. For path "
          "'shifts' value is a list of shifts to add; for 'shifts.remove' it is a list of dates. Use the value "
