@@ -1,6 +1,7 @@
 """A whole conversation against a scripted model: what the loop lets through, what it refuses, how it recovers."""
 
 import json
+import re
 
 import pytest
 
@@ -113,10 +114,42 @@ def test_the_mediation_draft_cannot_be_requested_before_a_check():
 def test_a_fact_changed_in_the_report_phase_sends_the_worker_back_to_confirm():
     reported = run_turn(confirmed_case(), "結果?", ScriptedLLM([Step.calling(("run_check", {})), Step.saying("好")]),
                         "zh-TW")
-    llm = ScriptedLLM([set_facts(fact("employment.agreed_wage", 200, "時薪改成200")), Step.saying("已經改了，請再確認一次資料表。")])
+    old_shortfall = reported.report_view["claim"]["shortfall"]
+    llm = ScriptedLLM([set_facts(fact("employment.agreed_wage", 200, "時薪改成200")),
+                       Step.saying(f"照上次的報告，短少 {old_shortfall} 元。"), Step.saying("已經改了，請再確認一次資料表。")])
     changed = run_turn(reported.case, "時薪改成200", llm, "zh-TW")
     assert changed.phase is Phase.CONFIRM and changed.case.confirmed is False
-    assert changed.report_view is None and changed.case.last_report is None
+    assert changed.report_view is None
+    assert changed.reply == "已經改了，請再確認一次資料表。"
+
+
+def _response(request, tool):
+    return next(part["functionResponse"]["response"] for content in request.contents for part in content["parts"]
+                if part.get("functionResponse", {}).get("name") == tool)
+
+
+def test_a_check_run_earlier_in_the_same_turn_stops_counting_once_a_fact_changes():
+    def quote_the_check(request):
+        return Step.saying(f"照剛才的結果，短少 {_response(request, 'run_check')['claim']['shortfall']} 元。")
+
+    llm = ScriptedLLM([Step.calling(("run_check", {})), set_facts(fact("employment.agreed_wage", 190, "時薪改成190")),
+                       quote_the_check, Step.saying("時薪改了，請再檢查資料表，沒問題就按確認資料。")])
+    result = run_turn(confirmed_case(), "時薪改成190", llm, "zh-TW")
+    assert result.phase is Phase.CONFIRM
+    assert result.reply == "時薪改了，請再檢查資料表，沒問題就按確認資料。"
+    assert [e["action"] for e in result.trace if e["kind"] == "guard"] == ["rewritten"]
+
+
+def test_a_mediation_draft_made_before_a_fact_changed_no_longer_grounds_its_amount():
+    def quote_the_draft(request):
+        [amount] = re.findall(r"請求金額：([\d,]+) 元", _response(request, "draft_mediation")["mediation_draft"])
+        return Step.saying(f"申請書上的請求金額是 {amount} 元。")
+
+    llm = ScriptedLLM([Step.calling(("run_check", {})), Step.calling(("draft_mediation", {})),
+                       set_facts(fact("employment.agreed_wage", 190, "時薪改成190")),
+                       quote_the_draft, Step.saying("時薪改了，請再檢查資料表。")])
+    result = run_turn(confirmed_case(), "時薪改成190", llm, "zh-TW")
+    assert result.reply == "時薪改了，請再檢查資料表。"
 
 
 def test_a_made_up_number_is_sent_back_once_and_the_rewrite_is_used():
@@ -167,6 +200,25 @@ def test_the_same_words_are_fine_once_the_report_is_out():
     result = run_turn(confirmed_case(), "結果", llm, "zh-TW")
     assert result.reply == "最低工資這一項，報告認為可能違法。"
     assert not [e for e in result.trace if e["kind"] == "guard"]
+
+
+def test_a_report_from_an_earlier_turn_still_counts_while_the_facts_stay_the_same():
+    reported = run_turn(confirmed_case(), "結果", ScriptedLLM([Step.calling(("run_check", {})), Step.saying("好了。")]), "zh-TW")
+    llm = ScriptedLLM([Step.calling(("find_help", {"city": "高雄市"})), Step.saying("最低工資這一項，報告認為可能違法。")])
+    result = run_turn(reported.case, "最低工資那項是什麼意思？", llm, "zh-TW")
+    assert result.reply == "最低工資這一項，報告認為可能違法。"
+    assert result.report_view is not None
+
+
+def test_confirmed_facts_without_a_check_are_not_a_report():
+    llm = ScriptedLLM([Step.calling(("find_help", {"city": "高雄市"})),
+                       Step.saying("老闆這樣違法，你可以請求加班費，也少給你最低工資。"),
+                       Step.saying("我先幫你跑一次檢查。")])
+    result = run_turn(confirmed_case(), "我確認了", llm, "zh-TW")
+    assert result.reply == "我先幫你跑一次檢查。"
+    [event] = [e for e in result.trace if e["kind"] == "guard"]
+    assert event["action"] == "rewritten"
+    assert result.report_view is None
 
 
 def test_in_the_report_phase_a_wrong_amount_is_still_caught():
