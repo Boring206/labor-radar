@@ -306,7 +306,8 @@ def materialize(case: Case, overrides: dict[str, Any] | None = None) -> dict:
     if derived:
         data["period"] = {**derived, **period}
     slips = [slip for slip in data.pop("payslips", []) if "gross_pay" in slip]
-    typed = source_of(case, "payslips.gross_pay").source is Source.USER
+    origin = source_of(case, "payslips.gross_pay")
+    typed = origin.source is Source.USER and not any(word in origin.quote for word in PAYSLIP_WORDS)
     for slip in slips:
         slip.setdefault("self_reported", typed)
         slip["period"] = dict(data.get("period", {}))
@@ -326,6 +327,9 @@ def gaps(case: Case) -> list[str]:
     except IntakeError as error:
         return error.problems
     return []
+
+
+PAYSLIP_WORDS = ("薪資單", "薪資條", "薪水單", "薪資明細", "薪轉明細")
 
 
 def source_of(case: Case, key: str) -> Provenance:

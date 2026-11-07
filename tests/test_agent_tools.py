@@ -314,6 +314,14 @@ def test_gross_pay_typed_in_the_chat_is_reported_as_the_workers_own_record(monke
     assert _paid_label(read) == "薪資單上的應發金額"
 
 
+def test_gross_pay_the_worker_reads_off_a_payslip_is_reported_as_the_payslip():
+    base = agent_case(make([("2026-10-12", "09:00", "13:00")], *WEEK_))
+    base = base.model_copy(update={"draft": {k: v for k, v in base.draft.items() if k != "payslips"}})
+    read_off, _ = tools.call(said(base, "薪資單上的應發金額是 700 元"), "set_facts",
+                             {"facts": [fact("payslips.gross_pay", 700, "薪資單上的應發金額是 700 元")]}, ctx())
+    assert _paid_label(read_off) == "薪資單上的應發金額"
+
+
 def test_reading_a_photo_needs_an_attachment_and_says_so():
     case = said(Case())
     assert "read_document" not in names(case)
