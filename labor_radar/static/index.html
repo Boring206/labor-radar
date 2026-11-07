@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>勞權雷達</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1 data-i18n="app.title">勞權雷達</h1>
+      <p data-i18n="app.tagline"></p>
+    </div>
+    <label class="lang"><span data-i18n="ui.lang"></span>
+      <select id="lang"></select>
+    </label>
+  </header>
+  <div id="draft-banner" class="banner draft" hidden></div>
+  <div class="banner legal" data-i18n="disclaimer.short"></div>
+
+  <main>
+    <section class="card" id="upload-card">
+      <h2 data-i18n="ui.step.upload"></h2>
+      <p class="hint" data-i18n="ui.step.upload_hint"></p>
+      <p class="hint" data-i18n="ui.upload.privacy"></p>
+      <div class="row">
+        <input type="file" id="photo" accept="image/*,application/pdf">
+        <button id="extract" type="button" data-i18n="ui.upload.button"></button>
+        <button id="sample" type="button" class="secondary" data-i18n="ui.sample"></button>
+      </div>
+      <p id="upload-status" class="hint"></p>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="ui.step.job"></h2>
+      <div class="grid">
+        <label><span data-i18n="ui.worker_name"></span><input id="worker_name"></label>
+        <label><span data-i18n="ui.employer_name"></span><input id="employer_name"></label>
+        <label><span data-i18n="ui.city"></span><input id="city" placeholder="高雄市"></label>
+        <label><span data-i18n="ui.period_start"></span><input type="date" id="period_start"></label>
+        <label><span data-i18n="ui.period_end"></span><input type="date" id="period_end"></label>
+        <label><span data-i18n="ui.pay_basis"></span>
+          <select id="pay_basis" data-options="ui.pay_basis" data-values="hourly,monthly"></select></label>
+        <label><span data-i18n="ui.agreed_wage"></span><input type="number" id="agreed_wage" min="1"></label>
+        <label><span data-i18n="ui.agreed_monthly_hours"></span><input type="number" id="agreed_monthly_hours" min="1" max="744" step="0.5"></label>
+        <label><span data-i18n="ui.week_starts_on"></span><select id="week_starts_on"></select></label>
+      </div>
+      <div class="questions">
+        <label><span data-i18n="ui.relationship"></span>
+          <select id="relationship" data-options="ui.relationship" data-values="employee,contractor,unknown"></select></label>
+        <label><span data-i18n="ui.shift_system"></span>
+          <select id="shift_system" data-options="ui.shift_system" data-values="rotating,flexible,fixed,unknown"></select></label>
+        <label><span data-i18n="ui.special_hours"></span>
+          <select id="special_hours_arrangement" data-options="ui.answer" data-values="no,yes,unknown"></select></label>
+        <label><span data-i18n="ui.responsibility_system"></span>
+          <select id="responsibility_system" data-options="ui.answer" data-values="no,yes,unknown"></select></label>
+        <label><span data-i18n="ui.overtime_consent"></span>
+          <select id="overtime_consent" data-options="ui.answer" data-values="unknown,no,yes"></select></label>
+        <label class="check"><input type="checkbox" id="domestic_worker"><span data-i18n="ui.domestic_worker"></span></label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="ui.step.shifts"></h2>
+      <p class="hint" data-i18n="ui.shift.hint"></p>
+      <table class="shifts">
+        <thead><tr>
+          <th data-i18n="ui.shift.date"></th><th data-i18n="ui.shift.start"></th>
+          <th data-i18n="ui.shift.end"></th><th data-i18n="ui.shift.break"></th><th></th>
+        </tr></thead>
+        <tbody id="shift-rows"></tbody>
+      </table>
+      <button id="add-shift" type="button" class="secondary" data-i18n="ui.add_shift"></button>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="ui.step.pay"></h2>
+      <div class="grid">
+        <label><span data-i18n="ui.paid_total"></span><input type="number" id="gross_pay" min="0"></label>
+        <label class="check"><input type="checkbox" id="self_reported"><span data-i18n="ui.self_reported"></span></label>
+      </div>
+      <p class="hint" data-i18n="ui.paid_hint"></p>
+      <details>
+        <summary data-i18n="ui.json_toggle"></summary>
+        <textarea id="json" rows="14" spellcheck="false"></textarea>
+      </details>
+      <button id="check" type="button" class="primary" data-i18n="ui.check"></button>
+      <div id="errors" class="errors" hidden></div>
+    </section>
+
+    <section id="result" hidden></section>
+  </main>
+  <footer data-i18n="disclaimer.long"></footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>

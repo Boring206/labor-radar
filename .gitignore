@@ -1,0 +1,13 @@
+# 執行與建置產物
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+node_modules/
+
+# 金鑰只放在本機環境變數，不進版控
+.env
+.env.*
+
+# 本機狀態
+.pytest_cache/

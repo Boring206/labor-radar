@@ -1,0 +1,30 @@
+{
+  "worker": {"name": "林小美", "address": "高雄市三民區（虛構）", "phone": "0900-000-000"},
+  "employer": {"name": "好喝手搖飲三民店（虛構）", "address": "高雄市三民區（虛構）", "representative": "王老闆（虛構）"},
+  "city": "高雄市",
+  "employment": {
+    "pay_basis": "hourly",
+    "agreed_wage": 185,
+    "relationship": "employee",
+    "domestic_worker": false,
+    "shift_system": "flexible",
+    "special_hours_arrangement": "no",
+    "responsibility_system": "no",
+    "overtime_consent": "unknown",
+    "week_starts_on": "monday"
+  },
+  "period": {"start": "2026-10-05", "end": "2026-10-18"},
+  "shifts": [
+    {"date": "2026-10-05", "start": "17:00", "end": "22:00"},
+    {"date": "2026-10-07", "start": "17:00", "end": "23:00"},
+    {"date": "2026-10-08", "start": "08:00", "end": "13:00"},
+    {"date": "2026-10-10", "start": "10:00", "end": "18:00", "break_minutes": 60},
+    {"date": "2026-10-12", "start": "17:00", "end": "22:00"},
+    {"date": "2026-10-14", "start": "17:00", "end": "22:00"},
+    {"date": "2026-10-16", "start": "17:00", "end": "22:00"},
+    {"date": "2026-10-17", "start": "12:00", "end": "18:00"}
+  ],
+  "payslips": [
+    {"period": {"start": "2026-10-05", "end": "2026-10-18"}, "gross_pay": 8140, "self_reported": false}
+  ]
+}
