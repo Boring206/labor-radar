@@ -54,8 +54,21 @@ def test_the_model_comes_from_the_environment(monkeypatch):
 
 def test_calls_are_forbidden_with_mode_none_for_a_rewrite(monkeypatch):
     sent = fake_post(monkeypatch, reply([{"text": "ok"}]))
-    GeminiLLM().step("s", USER, DECL, allow_calls=False)
+    GeminiLLM().step("s", USER, DECL, calls="none")
     assert sent[0]["json"]["toolConfig"] == {"functionCallingConfig": {"mode": "NONE"}}
+
+
+def test_some_call_can_be_demanded(monkeypatch):
+    sent = fake_post(monkeypatch, reply([{"functionCall": {"name": "next_questions"}}]))
+    GeminiLLM().step("s", USER, DECL, calls="any")
+    assert sent[0]["json"]["toolConfig"] == {"functionCallingConfig": {"mode": "ANY"}}
+
+
+def test_one_tool_can_be_forced(monkeypatch):
+    sent = fake_post(monkeypatch, reply([{"functionCall": {"name": "next_questions"}}]))
+    GeminiLLM().step("s", USER, DECL, calls="next_questions")
+    assert sent[0]["json"]["toolConfig"] == {
+        "functionCallingConfig": {"mode": "ANY", "allowedFunctionNames": ["next_questions"]}}
 
 
 def test_function_calls_are_read_and_the_content_object_is_kept_whole(monkeypatch):

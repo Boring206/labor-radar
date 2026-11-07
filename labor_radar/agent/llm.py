@@ -15,6 +15,7 @@ import httpx
 
 from labor_radar import extraction
 
+AUTO, NONE, ANY = "auto", "none", "any"
 TIMEOUT = 90
 RETRY_STATUS = {429, 500, 502, 503}
 RETRIES = 2
@@ -49,7 +50,14 @@ class Step:
 
 
 class LLM(Protocol):
-    def step(self, system: str, contents: list[dict], tools: list[dict], *, allow_calls: bool = True) -> Step: ...
+    def step(self, system: str, contents: list[dict], tools: list[dict], *, calls: str = AUTO) -> Step: ...
+
+
+def _calling_mode(calls: str) -> dict:
+    """AUTO lets the model choose, NONE forbids calls, ANY demands some call, a tool name demands that one."""
+    if calls in (AUTO, NONE, ANY):
+        return {"mode": calls.upper()}
+    return {"mode": "ANY", "allowedFunctionNames": [calls]}
 
 
 class GeminiLLM:
@@ -58,7 +66,7 @@ class GeminiLLM:
     def __init__(self, model: str | None = None):
         self.model = model or os.environ.get("GEMINI_MODEL", extraction.DEFAULT_MODEL)
 
-    def step(self, system: str, contents: list[dict], tools: list[dict], *, allow_calls: bool = True) -> Step:
+    def step(self, system: str, contents: list[dict], tools: list[dict], *, calls: str = AUTO) -> Step:
         key = os.environ.get("GEMINI_API_KEY")
         if not key:
             raise LLMError("GEMINI_API_KEY is not set", 503)
@@ -69,17 +77,17 @@ class GeminiLLM:
         }
         if tools:
             body["tools"] = [{"functionDeclarations": tools}]
-            body["toolConfig"] = {"functionCallingConfig": {"mode": "AUTO" if allow_calls else "NONE"}}
+            body["toolConfig"] = {"functionCallingConfig": _calling_mode(calls)}
         data = self._post(body, key)
         candidates = data.get("candidates") or []
         if not candidates:
             raise LLMError(f"Gemini returned no candidate ({data.get('promptFeedback', {}).get('blockReason', 'unknown')})")
         content = {"role": "model", **(candidates[0].get("content") or {})}
         parts = content.get("parts", [])
-        calls = tuple(ToolCall(p["functionCall"]["name"], p["functionCall"].get("args") or {})
-                      for p in parts if "functionCall" in p)
+        made = tuple(ToolCall(p["functionCall"]["name"], p["functionCall"].get("args") or {})
+                     for p in parts if "functionCall" in p)
         text = "".join(p["text"] for p in parts if "text" in p and not p.get("thought")).strip()
-        return Step(calls, text, content)
+        return Step(made, text, content)
 
     def _post(self, body: dict, key: str) -> dict:
         url = extraction.ENDPOINT.format(model=self.model)
@@ -104,7 +112,7 @@ class Request:
     system: str
     contents: list[dict]
     tools: list[str]
-    allow_calls: bool
+    calls: str
 
 
 class ScriptedLLM:
@@ -115,8 +123,8 @@ class ScriptedLLM:
         self.script = list(script)
         self.requests: list[Request] = []
 
-    def step(self, system: str, contents: list[dict], tools: list[dict], *, allow_calls: bool = True) -> Step:
-        request = Request(system, deepcopy(contents), [t["name"] for t in tools], allow_calls)
+    def step(self, system: str, contents: list[dict], tools: list[dict], *, calls: str = AUTO) -> Step:
+        request = Request(system, deepcopy(contents), [t["name"] for t in tools], calls)
         self.requests.append(request)
         if not self.script:
             raise AssertionError("the script ran out of steps")

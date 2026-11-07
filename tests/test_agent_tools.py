@@ -12,6 +12,7 @@ from labor_radar.agent.case import Case, Phase, Source, gaps, materialize, with_
 from labor_radar.agent.tools import Attachment, Ctx
 from labor_radar.intake import parse_record
 
+WEEK_ = ("2026-10-12", "2026-10-18")
 SAID = "我在手搖飲打工，時薪185，10/7 17:00到23:00。我不知道老闆算不算輪班制"
 
 
@@ -366,3 +367,19 @@ def test_the_rest_of_the_case_is_checked_too(field):
 def test_time_values_round_trip_without_seconds():
     case = Case(draft={"shifts": [{"date": "2026-10-07", "start": time(17, 0).isoformat(), "end": "23:00:00"}]})
     assert case.draft["shifts"] == [{"date": "2026-10-07", "start": "17:00", "end": "23:00", "break_minutes": 0}]
+
+
+def test_a_stored_answer_comes_back_in_the_wording_of_its_option_with_the_open_questions():
+    case = said(agent_case(make([("2026-10-12", "09:00", "13:00")], *WEEK_, wage=100, shift_system="unknown", relationship="unknown")),
+                "店家每週自己排班，上的時段不固定")
+    stored, result = tools.call(case, "set_facts", {"facts": [
+        fact("employment.shift_system", "flexible", "店家每週自己排班")]}, ctx())
+    assert result["stored_as"] == {"employment.shift_system": "店家每週排班，我上的時段不固定（常見於兼職）"}
+    assert "shift_system" not in [q["id"] for q in result["questions"]]
+    assert result["phase"] == "clarify" and result["questions"][0]["id"] == "relationship"
+
+
+def test_the_tool_description_defines_each_option_in_the_form_wording():
+    guide = tools.TOOLS["set_facts"].description
+    assert "flexible = 店家每週排班，我上的時段不固定（常見於兼職）" in guide
+    assert "rotating = 輪班制：公司有固定的幾個班別，員工分組輪流上" in guide

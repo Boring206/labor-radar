@@ -148,12 +148,16 @@ def _apply_fact(case: Case, item: Any) -> str | None:
     return None
 
 
-def _outcome(before: Case, after: Case, result: dict) -> tuple[Case, dict]:
+def _outcome(before: Case, after: Case, result: dict, lang: str) -> tuple[Case, dict]:
+    """The result a fact-changing tool returns: what the case now holds and what is still open, so the
+    model need not ask again."""
     if facts_state(before) != facts_state(after):
         after = after.changed()
     result["phase"] = questions.phase(after).value
     if problems := gaps(after):
         result["gaps"] = problems
+    else:
+        result["questions"] = questions.describe(after, lang)["questions"]
     return after, result
 
 
@@ -174,7 +178,14 @@ def set_facts(case: Case, args: dict, ctx: Ctx) -> tuple[Case, dict]:
     if not applied:
         result["error"] = "no fact was stored"
         return case, result
-    return _outcome(case, new, result)
+    result["stored_as"] = {p: _label(new, p) for p in applied if p in questions.BY_PATH}
+    return _outcome(case, new, result, ctx.lang)
+
+
+def _label(case: Case, path: str) -> str:
+    """The wording of the option a stored answer stands for, so the model can see whether it picked the right one."""
+    question = questions.BY_PATH[path]
+    return questions.option_label("zh-TW", question, get_path(case.draft, path))
 
 
 def _photo_set(case: Case, path: str, value: Any, conflicts: list) -> None:
@@ -222,8 +233,10 @@ def read_document(case: Case, args: dict, ctx: Ctx) -> tuple[Case, dict]:
         "hourly_wage": draft.hourly_wage, "monthly_wage": draft.monthly_wage, "gross_pay": draft.gross_pay,
         "unreadable": [u[:200] for u in draft.unreadable[:MAX_UNREADABLE]],
         "conflicts": conflicts,
+        "reminder": "the worker's message may state facts the document does not show; store them with set_facts "
+                    "before you reply",
     }
-    return _outcome(case, new, result)
+    return _outcome(case, new, result, ctx.lang)
 
 
 def next_questions(case: Case, args: dict, ctx: Ctx) -> tuple[Case, dict]:
@@ -320,6 +333,10 @@ def _object(properties: dict, required: tuple[str, ...] = ()) -> dict:
 
 
 _PATHS = [*FIELDS, "shifts", "shifts.remove"]
+_VALUE_GUIDE = " ".join(
+    f"{q.path} ({questions.question_text('zh-TW', q)}) " + ", ".join(
+        f"{o} = {questions.option_label('zh-TW', q, o)}" for o in (*q.options, "unknown")) + "."
+    for q in questions.QUESTIONS)
 TOOLS: dict[str, Tool] = {tool.name: tool for tool in (
     Tool("read_document",
          "Read the schedule, clock record or payslip photo attached to this message and add what it shows to "
@@ -330,12 +347,11 @@ TOOLS: dict[str, Tool] = {tool.name: tool for tool in (
          "fields accept only their listed values. A shift is {date: YYYY-MM-DD, start: HH:MM, end: HH:MM, "
          "break_minutes}; an end earlier than the start means the shift ends the next day. For path "
          "'shifts' value is a list of shifts to add; for 'shifts.remove' it is a list of dates. Use the value "
-         "'unknown' when the worker says they do not know. "
-         "Values: employment.pay_basis hourly|monthly; employment.agreed_wage a number in NTD; "
-         "employment.relationship employee|contractor|unknown; employment.shift_system "
-         "rotating|flexible|fixed|unknown; special_hours_arrangement, responsibility_system, overtime_consent "
-         "yes|no|unknown; employment.week_starts_on monday..sunday|unknown; employment.domestic_worker true|false; "
-         "payslips.gross_pay the pay before deductions.",
+         "'unknown' when the worker says they do not know. Pick the option whose wording matches what the "
+         "worker said, not the one that sounds closest to a legal term. "
+         "Other values: employment.pay_basis hourly|monthly; employment.agreed_wage a number in NTD; "
+         "employment.domestic_worker true|false; payslips.gross_pay the pay before deductions. "
+         + _VALUE_GUIDE,
          _object({"facts": {"type": "ARRAY", "items": _object({
              "path": {"type": "STRING", "enum": _PATHS},
              "value": {"description": "a string, number, boolean or list, as the path requires"},

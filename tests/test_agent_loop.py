@@ -130,7 +130,7 @@ def test_a_made_up_number_is_sent_back_once_and_the_rewrite_is_used():
     [event] = [e for e in result.trace if e["kind"] == "guard"]
     assert event["action"] == "rewritten" and event["problems"][0]["token"] == "190"
     retry = llm.requests[-1]
-    assert retry.allow_calls is False
+    assert retry.calls == "none"
     assert "190" in retry.contents[-1]["parts"][0]["text"] and retry.contents[-2]["parts"][0]["text"] == "你的時薪 190 元，對嗎？"
 
 
@@ -270,3 +270,19 @@ def test_the_questions_the_ui_shows_match_the_ones_the_engine_ranks():
     assert shown.phase is Phase.CONFIRM
     assert shown.questions["not_asked_reason"] == "不影響結果、所以沒問的題目"
     assert {q["id"] for q in shown.questions["not_asked"]} == {q.id for q in questions.analyze(shown.case).not_asked}
+
+
+def test_an_attached_file_is_read_before_the_model_gets_to_choose(monkeypatch):
+    from labor_radar import extraction
+
+    monkeypatch.setattr(extraction, "extract", lambda data, mime, year: extraction.Draft.model_validate(
+        {"document_type": "schedule", "unreadable": [], "shifts": []}))
+    attached = ScriptedLLM([Step.calling(("read_document", {})), Step.saying("請告訴我時薪。")])
+    run_turn(Case(), "這是班表", attached, "zh-TW", Attachment(b"x", "image/png"))
+    assert [r.calls for r in attached.requests] == ["read_document", "auto"]
+
+
+def test_a_turn_without_a_file_still_opens_with_a_tool_call():
+    plain = ScriptedLLM([Step.calling(("next_questions", {})), Step.saying("請告訴我時薪。")])
+    run_turn(Case(), "你好", plain, "zh-TW")
+    assert [r.calls for r in plain.requests] == ["any", "auto"]
