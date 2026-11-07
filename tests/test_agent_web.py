@@ -101,6 +101,7 @@ def test_meta_reports_the_assistant_when_a_key_is_set(monkeypatch):
 
 
 @pytest.mark.parametrize("case", [
+    {"draft": {"shifts": [{"date": "9999-12-31", "start": "22:00", "end": "02:00"}]}},
     {"draft": {"employment": {"shift_system": "weekly shifts"}}},
     {"draft": {"admin": True}},
     {"confirmed": "yes please"},

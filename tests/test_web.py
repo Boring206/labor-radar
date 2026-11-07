@@ -27,6 +27,15 @@ def test_check_rejects_bad_input_with_the_reasons(sample):
     assert any("period" in problem for problem in response.json()["detail"])
 
 
+@pytest.mark.parametrize("day", ["9999-12-31", "0001-01-01"])
+def test_a_date_the_calendar_cannot_handle_is_a_422_not_a_crash(sample, day):
+    record = sample | {"period": {"start": day, "end": day}, "payslips": [],
+                       "shifts": [{"date": day, "start": "22:00", "end": "02:00"}]}
+    response = client.post("/api/check", json=record)
+    assert response.status_code == 422
+    assert any("date" in problem for problem in response.json()["detail"])
+
+
 def test_draft_languages_are_flagged(sample):
     body = client.post("/api/check?lang=vi", json=sample).json()
     assert body["draft_translation"] is True and body["draft_banner"]

@@ -157,6 +157,14 @@ def test_a_malformed_shift_is_refused_without_touching_the_draft(shift):
     assert result["error"] == "no fact was stored" and kept == case
 
 
+def test_a_shift_on_a_date_the_calendar_cannot_handle_is_refused_with_the_reason():
+    case = said(Case(), "9999/12/31 22:00 到 02:00")
+    shift = [{"date": "9999-12-31", "start": "22:00", "end": "02:00"}]
+    kept, result = tools.call(case, "set_facts", {"facts": [fact("shifts", shift, "22:00 到 02:00")]}, ctx())
+    assert result["error"] == "no fact was stored" and "date" in result["rejected"][0]["error"]
+    assert kept == case
+
+
 def test_a_shift_whose_break_swallows_it_is_stored_and_blocks_the_check_until_fixed():
     case = said(Case(), "10/7 17:00-18:00 休息 90 分鐘，時薪185")
     base = [fact("employment.pay_basis", "hourly", "時薪185"), fact("employment.agreed_wage", 185, "時薪185")]
