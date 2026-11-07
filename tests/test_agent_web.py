@@ -160,7 +160,7 @@ def test_a_photo_is_read_through_the_attachment(scripted, monkeypatch):
 
     monkeypatch.setattr(extraction, "extract", read)
     scripted.script += [Step.calling(("read_document", {})), Step.saying("讀到了，請告訴我時薪。")]
-    body = turn(Case(), "班表",班表=None) if False else turn(Case(), "班表", file=("a.png", PNG, "image/png")).json()
+    body = turn(Case(), "班表", file=("a.png", PNG, "image/png")).json()
     assert seen == {"data": PNG, "mime": "image/png"}
     assert body["case"]["draft"]["shifts"][0]["date"] == "2026-10-07"
     assert PNG.decode("latin1") not in json.dumps(body)
