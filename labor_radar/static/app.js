@@ -23,6 +23,7 @@ async function loadStrings() {
   strings = await (await fetch(`/api/i18n/${lang}`)).json();
   document.documentElement.lang = lang;
   document.querySelectorAll("[data-i18n]").forEach((node) => { node.textContent = tr(node.dataset.i18n); });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach((node) => { node.placeholder = tr(node.dataset.i18nPlaceholder); });
   document.querySelectorAll("select[data-options]").forEach((select) => {
     const current = select.value;
     select.replaceChildren(...select.dataset.values.split(",").map((value) =>
@@ -122,7 +123,7 @@ function section(title, ...children) {
   return el("section", { class: "card result-part" }, el("h3", { text: title }), ...children);
 }
 
-function renderResult(view) {
+function renderResult(view, target = $("result"), scroll = true) {
   const parts = [section(tr("section.summary"), ...view.summary.map((s) => el("p", { class: "summary", text: s })))];
   for (const [key, title] of [["violations", "section.violations"], ["needs_human", "section.needs_human"], ["notes", "section.notes"]]) {
     if (view[key].length) parts.push(section(tr(title), ...view[key].map(findingCard)));
@@ -156,9 +157,9 @@ function renderResult(view) {
   const print = el("button", { type: "button", class: "secondary", text: tr("ui.print") });
   print.addEventListener("click", () => window.print());
   parts.push(el("p", { class: "disclaimer" }, view.disclaimer), print);
-  $("result").replaceChildren(...parts);
-  $("result").hidden = false;
-  $("result").scrollIntoView({ behavior: "smooth" });
+  target.replaceChildren(...parts);
+  target.hidden = false;
+  if (scroll) target.scrollIntoView({ behavior: "smooth" });
 }
 
 async function runCheck() {
@@ -206,11 +207,14 @@ async function init() {
   fillForm({ employment: { relationship: "employee", shift_system: "unknown", special_hours_arrangement: "no",
     responsibility_system: "no", overtime_consent: "unknown", pay_basis: "hourly", week_starts_on: "unknown" }, shifts: [] });
   if (!meta.gemini) { $("extract").disabled = true; $("upload-status").textContent = tr("ui.upload.no_key"); }
-  $("lang").addEventListener("change", async (e) => { lang = e.target.value; localStorage.setItem("lang", lang); await loadStrings(); });
+  $("lang").addEventListener("change", async (e) => {
+    lang = e.target.value; localStorage.setItem("lang", lang); await loadStrings(); window.onLangChange?.();
+  });
   $("sample").addEventListener("click", () => fillForm(meta.sample));
   $("add-shift").addEventListener("click", () => $("shift-rows").append(shiftRow()));
   $("check").addEventListener("click", runCheck);
   $("extract").addEventListener("click", runExtract);
+  window.initAgent?.();
   $("json").addEventListener("change", () => { const r = safeJson($("json").value); if (r) fillForm(r); });
 }
 

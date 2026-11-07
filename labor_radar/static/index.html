@@ -20,7 +20,12 @@
   <div id="draft-banner" class="banner draft" hidden></div>
   <div class="banner legal" data-i18n="disclaimer.short"></div>
 
-  <main>
+  <nav class="modes" role="tablist">
+    <button id="tab-form" type="button" role="tab" class="mode active" data-mode="form" data-i18n="agent.tab.form"></button>
+    <button id="tab-agent" type="button" role="tab" class="mode" data-mode="agent" data-i18n="agent.tab.agent"></button>
+  </nav>
+
+  <main id="form-mode">
     <section class="card" id="upload-card">
       <h2 data-i18n="ui.step.upload"></h2>
       <p class="hint" data-i18n="ui.step.upload_hint"></p>
@@ -92,7 +97,46 @@
 
     <section id="result" hidden></section>
   </main>
+
+  <main id="agent-mode" class="agent" hidden>
+    <p class="hint" data-i18n="agent.intro"></p>
+    <p class="hint" data-i18n="agent.privacy"></p>
+    <div class="agent-grid">
+      <section class="card chat">
+        <div id="chat-log" class="chat-log" aria-live="polite"></div>
+        <div id="chips" class="chips"></div>
+        <form id="chat-form" class="chat-form">
+          <textarea id="chat-input" rows="2" data-i18n-placeholder="agent.input.placeholder"></textarea>
+          <div class="row">
+            <label class="attach"><input type="file" id="chat-file" accept="image/*,application/pdf" hidden><span data-i18n="agent.attach"></span></label>
+            <span id="chat-file-name" class="hint"></span>
+            <button id="chat-send" type="submit" class="primary" data-i18n="agent.send"></button>
+            <button id="agent-reset" type="button" class="link" data-i18n="agent.new"></button>
+          </div>
+        </form>
+      </section>
+      <section class="card facts">
+        <h2><span data-i18n="agent.facts.title"></span> <span id="phase-badge" class="badge phase"></span></h2>
+        <p class="hint" data-i18n="agent.facts.hint"></p>
+        <button id="confirm" type="button" class="primary" disabled data-i18n="agent.confirm.button"></button>
+        <p id="confirm-hint" class="hint"></p>
+        <p id="not-asked" class="not-asked"></p>
+        <div class="facts-scroll">
+          <table class="facts-table">
+            <thead><tr><th data-i18n="agent.col.item"></th><th data-i18n="agent.col.value"></th><th data-i18n="agent.col.source"></th></tr></thead>
+            <tbody id="facts-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+    <details class="card trace" id="trace-card">
+      <summary data-i18n="agent.trace.title"></summary>
+      <div id="trace-list"></div>
+    </details>
+    <section id="agent-result" hidden></section>
+  </main>
   <footer data-i18n="disclaimer.long"></footer>
   <script src="/static/app.js"></script>
+  <script src="/static/agent.js"></script>
 </body>
 </html>
