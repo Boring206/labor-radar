@@ -119,6 +119,21 @@ def test_a_quote_the_worker_never_wrote_is_refused(quote):
     assert "quote" in result["rejected"][0]["error"] and kept == case
 
 
+def test_a_number_must_appear_in_the_words_quoted_for_it():
+    case = said(Case(), "我時薪185")
+    kept, result = tools.call(case, "set_facts", {"facts": [fact("employment.agreed_wage", 190, "時薪185")]}, ctx())
+    assert "190" in result["rejected"][0]["error"] and kept == case
+    stored, _ = tools.call(said(Case(), "月薪2萬8"), "set_facts", {"facts": [
+        fact("employment.agreed_wage", 28000, "月薪2萬8")]}, ctx())
+    assert stored.draft["employment"]["agreed_wage"] == 28000
+
+
+def test_a_quote_must_come_from_the_message_being_answered():
+    case = with_turn(with_turn(said(Case(), "我時薪185"), "assistant", "好，哪幾天上班？"), "user", "10/7 17:00 到 23:00")
+    kept, result = tools.call(case, "set_facts", {"facts": [fact("employment.agreed_wage", 185, "時薪185")]}, ctx())
+    assert "quote" in result["rejected"][0]["error"] and kept == case
+
+
 def test_quote_matching_ignores_spacing_and_full_width_digits():
     case = said(Case(), "時薪１８５ 元")
     stored, result = tools.call(case, "set_facts", {"facts": [fact("employment.agreed_wage", 185, "時薪185元")]}, ctx())

@@ -115,6 +115,39 @@ def test_every_case_the_server_returns_is_accepted_on_the_next_turn(scripted, mo
     assert again.status_code == 200
 
 
+def tap(case, question, option, lang="zh-TW"):
+    payload = {"case": json.loads(case.model_dump_json()), "tap": {"question": question, "option": option}, "lang": lang}
+    return client.post("/api/agent/turn", data={"payload": json.dumps(payload)})
+
+
+def test_a_tapped_option_is_stored_as_the_workers_answer_and_its_words_are_not_quotable(scripted, sample):
+    case = agent_case(sample, shift_system="unknown")
+    question = "公司怎麼排你的班？輪班制是指公司有幾個固定班別（例如早班、晚班），由員工分組輪流上。"
+    label = "店家每週排班，我上的時段不固定（常見於兼職）"
+    scripted.script += [
+        Step.calling(("set_facts", {"facts": [{"path": "employment.shift_system", "value": "rotating", "quote": "公司怎麼排你的班"}]})),
+        Step.saying("收到，請檢查資料表。"),
+    ]
+    body = tap(case, "shift_system", "flexible").json()
+    assert body["case"]["draft"]["employment"]["shift_system"] == "flexible"
+    assert body["case"]["provenance"]["employment.shift_system"] == {"source": "user", "quote": label}
+    assert "shift_system" in body["case"]["answered"]
+    assert body["case"]["history"][-2]["text"] == f"{question} → {label}"
+    assert body["trace"][0]["ok"] is False and "quote" in body["trace"][0]["rejected"][0]["error"]
+
+
+def test_dont_know_can_be_tapped_too(scripted, sample):
+    scripted.script += [Step.calling(("next_questions", {})), Step.saying("好，請檢查資料表。")]
+    body = tap(agent_case(sample, shift_system="unknown"), "shift_system", "unknown").json()
+    assert body["case"]["provenance"]["employment.shift_system"] == {"source": "user", "quote": "不確定"}
+    assert body["phase"] == "confirm"
+
+
+@pytest.mark.parametrize("question, option", [("shift_system", "weekly"), ("made_up", "yes"), ("responsibility_system", "")])
+def test_a_tap_on_an_option_that_does_not_exist_is_a_422(scripted, question, option):
+    assert tap(Case(), question, option).status_code == 422 and scripted.requests == []
+
+
 def test_a_photo_is_read_through_the_attachment(scripted, monkeypatch):
     from labor_radar import extraction
 
