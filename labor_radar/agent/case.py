@@ -19,6 +19,9 @@ from labor_radar.intake import IntakeError, ShiftIn, parse_record
 from labor_radar.model import WEEKDAYS, Answer, PayBasis, Relationship, ShiftSystem
 
 HISTORY_CAP = 20
+MAX_SHIFTS = 200
+"""Shifts one case may hold. A pay period runs a month at most, so this leaves room for several. phase()
+re-runs the engine for each answer of each open question, and at 200 shifts that takes about a second."""
 UNSET_NAME = "未提供"
 SHIFT_KEY = "shift:{date}T{start}"
 
@@ -176,8 +179,8 @@ def _draft_problems(draft: Any) -> list[str]:
     problems = []
     for key, value in draft.items():
         if key == "shifts":
-            if not isinstance(value, list) or len(value) > 1000:
-                problems.append("draft.shifts must be a list of at most 1000 shifts")
+            if not isinstance(value, list) or len(value) > MAX_SHIFTS:
+                problems.append(f"draft.shifts must be a list of at most {MAX_SHIFTS} shifts")
                 continue
             for index, raw in enumerate(value):
                 try:

@@ -8,6 +8,7 @@ any other tool is refused here too.
 import json
 import re
 import unicodedata
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
@@ -19,6 +20,7 @@ from labor_radar import extraction, paperwork, referrals, report
 from labor_radar.agent import questions
 from labor_radar.agent.case import (
     FIELDS,
+    MAX_SHIFTS,
     Case,
     Phase,
     Provenance,
@@ -41,6 +43,8 @@ SOURCES = Path(law.__file__).parent / "sources.md"
 MAX_FACTS = 40
 MAX_SHIFTS_PER_FACT = 100
 MAX_UNREADABLE = 10
+VIEW_ITEMS = 3
+VIEW_DATES = 10
 
 
 @dataclass(frozen=True)
@@ -113,8 +117,18 @@ def _add_shifts(case: Case, value: Any, quote: str) -> str | None:
         shifts = [normalize_shift(raw) for raw in value]
     except ValueError as error:
         return str(error)
+    if problem := _too_many_shifts(case, shifts):
+        return problem
     for shift in shifts:
         put_shift(case, shift, Provenance(source=Source.USER, quote=quote))
+    return None
+
+
+def _too_many_shifts(case: Case, added: list[dict]) -> str | None:
+    total = len({shift_key(s) for s in [*case.draft.get("shifts", []), *added]})
+    if total > MAX_SHIFTS:
+        return (f"a case holds at most {MAX_SHIFTS} shifts and this would make {total}; nothing from this list "
+                "was stored. Ask the worker about one pay period at a time")
     return None
 
 
@@ -238,13 +252,17 @@ def read_document(case: Case, args: dict, ctx: Ctx) -> tuple[Case, dict]:
     new = case.model_copy(deep=True)
     conflicts: list = []
     rejected: list = []
+    shifts = []
     for raw in draft.shifts:
         try:
-            shift = normalize_shift({"date": raw.date.isoformat(), "start": raw.start.strftime("%H:%M"),
-                                     "end": raw.end.strftime("%H:%M"), "break_minutes": raw.break_minutes or 0})
+            shifts.append(normalize_shift({"date": raw.date.isoformat(), "start": raw.start.strftime("%H:%M"),
+                                           "end": raw.end.strftime("%H:%M"), "break_minutes": raw.break_minutes or 0}))
         except ValueError as error:
             rejected.append({"path": "shifts", "value": raw.date.isoformat(), "error": str(error)})
-            continue
+    if problem := _too_many_shifts(new, shifts):
+        rejected.append({"path": "shifts", "value": f"{len(shifts)} shifts", "error": problem})
+        shifts = []
+    for shift in shifts:
         existing = new.provenance.get(shift_key(shift))
         if existing and existing.source is Source.USER:
             continue
@@ -286,20 +304,36 @@ def next_questions(case: Case, args: dict, ctx: Ctx) -> tuple[Case, dict]:
 
 
 def _item(i: dict) -> dict:
-    keep = {k: i[k] for k in ("rule_id", "title", "verdict", "explanation", "amount", "dates", "why_human")}
-    return keep | {"citations": [c["label"] for c in i["citations"]],
-                   "calculation": [f"{c['text']} = {c['amount']}" for c in i["calcs"]]}
+    keep = {k: i[k] for k in ("rule_id", "title", "verdict", "explanation", "amount", "why_human")}
+    dates = {"dates": i["dates"][:VIEW_DATES]} | ({"more_dates": len(i["dates"]) - VIEW_DATES}
+                                                  if len(i["dates"]) > VIEW_DATES else {})
+    return keep | dates | {"citations": [c["label"] for c in i["citations"]],
+                           "calculation": [f"{c['text']} = {c['amount']}" for c in i["calcs"]]}
+
+
+def _listed(items: list[dict]) -> tuple[list[dict], dict[str, int]]:
+    """The first few findings of each rule, and how many more each rule has. The engine reports one finding
+    per day, and the view goes into the model's prompt at every step."""
+    shown: list[dict] = []
+    more: Counter[str] = Counter()
+    for item in items:
+        if sum(s["rule_id"] == item["rule_id"] for s in shown) < VIEW_ITEMS:
+            shown.append(_item(item))
+        else:
+            more[item["rule_id"]] += 1
+    return shown, dict(more)
 
 
 def compact_view(view: dict) -> dict:
     """What the model sees of a report: the findings, the claim and the citations, not the whole page."""
     claim = view["claim"]
+    groups = {group: _listed(view[group]) for group in ("violations", "needs_human", "notes")}
+    not_listed = {group: more for group, (_, more) in groups.items() if more}
     return {
         "summary": view["summary"],
         "violation_count": len(view["violations"]),
-        "violations": [_item(i) for i in view["violations"]],
-        "needs_human": [_item(i) for i in view["needs_human"]],
-        "notes": [_item(i) for i in view["notes"]],
+        **{group: shown for group, (shown, _) in groups.items()},
+        **({"not_listed": not_listed} if not_listed else {}),
         "claim": ({k: claim[k] for k in ("complete", "required", "paid_label", "paid", "shortfall", "settled",
                                          "possible_extra", "rate_note")}
                   if claim["complete"] else {"complete": False, "message": claim["message"]}),
