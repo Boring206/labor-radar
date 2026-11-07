@@ -53,6 +53,8 @@ function renderChips() {
       el("div", { class: "chip-row" }, ...q.options.map((o) => chip(o.value, o.label)), chip("unknown", tr("ui.answer.unknown"), "skip")));
   });
   $("chips").replaceChildren(...groups);
+  if (agent.revealChips && groups.length) $("chips").scrollIntoView({ block: "center", behavior: "smooth" });
+  agent.revealChips = false;
 }
 
 function traceEvent(event) {
@@ -128,6 +130,7 @@ async function sendTurn(shown, input, file = null) {
     if (!response.ok) throw new Error(describeFailure(body, response.status));
     agent.case = body.case;
     agent.last = body;
+    agent.revealChips = true;
     agent.turns.push({ message: shown, trace: body.trace });
     return true;
   } catch (error) {
