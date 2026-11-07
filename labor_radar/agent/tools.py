@@ -203,14 +203,29 @@ def _label(case: Case, path: str) -> str:
     return questions.option_label("zh-TW", question, get_path(case.draft, path))
 
 
-def _photo_set(case: Case, path: str, value: Any, conflicts: list) -> None:
-    current = get_path(case.draft, path)
+def _said_by_worker(case: Case, path: str) -> bool:
     stated = case.provenance.get(path)
-    if current is not None and current != value and stated and stated.source is Source.USER:
-        conflicts.append({"path": path, "kept": current, "photo": value})
+    return stated is not None and stated.source is Source.USER
+
+
+def _photo_set(case: Case, values: dict[str, Any], conflicts: list, rejected: list) -> None:
+    """Values a photo shows together, such as a pay type and its wage, are stored together or not at all.
+    A value the registry refuses drops the group. If the worker said otherwise for any of them, the
+    worker's values stay and the photo's become conflicts."""
+    parsed = {}
+    for path, value in values.items():
+        try:
+            parsed[path] = FIELDS[path].parse(value)
+        except ValueError as error:
+            rejected.append({"path": path, "value": json.dumps(value)[:120], "error": f"{path} {error}"})
+            return
+    differs = {path: value for path, value in parsed.items() if get_path(case.draft, path) != value}
+    if any(_said_by_worker(case, path) for path in differs):
+        conflicts += [{"path": path, "kept": get_path(case.draft, path), "photo": value} for path, value in differs.items()]
         return
-    put_path(case.draft, path, value)
-    case.provenance[path] = Provenance(source=Source.PHOTO)
+    for path, value in differs.items():
+        put_path(case.draft, path, value)
+        case.provenance[path] = Provenance(source=Source.PHOTO)
 
 
 def read_document(case: Case, args: dict, ctx: Ctx) -> tuple[Case, dict]:
@@ -222,6 +237,7 @@ def read_document(case: Case, args: dict, ctx: Ctx) -> tuple[Case, dict]:
         return _error(case, str(error))
     new = case.model_copy(deep=True)
     conflicts: list = []
+    rejected: list = []
     for raw in draft.shifts:
         shift = normalize_shift({"date": raw.date.isoformat(), "start": raw.start.strftime("%H:%M"),
                                  "end": raw.end.strftime("%H:%M"), "break_minutes": raw.break_minutes or 0})
@@ -232,22 +248,21 @@ def read_document(case: Case, args: dict, ctx: Ctx) -> tuple[Case, dict]:
     wage = (("hourly", draft.hourly_wage) if draft.hourly_wage
             else ("monthly", draft.monthly_wage) if draft.monthly_wage else None)
     if wage:
-        _photo_set(new, "employment.pay_basis", wage[0], conflicts)
-        _photo_set(new, "employment.agreed_wage", FIELDS["employment.agreed_wage"].parse(wage[1]), conflicts)
+        _photo_set(new, {"employment.pay_basis": wage[0], "employment.agreed_wage": wage[1]}, conflicts, rejected)
     if draft.gross_pay is not None:
-        _photo_set(new, "payslips.gross_pay", FIELDS["payslips.gross_pay"].parse(draft.gross_pay), conflicts)
-        if draft.pay_period_start and draft.pay_period_end:
-            _photo_set(new, "period.start", draft.pay_period_start.isoformat(), conflicts)
-            _photo_set(new, "period.end", draft.pay_period_end.isoformat(), conflicts)
+        period = ({"period.start": draft.pay_period_start.isoformat(), "period.end": draft.pay_period_end.isoformat()}
+                  if draft.pay_period_start and draft.pay_period_end else {})
+        _photo_set(new, {"payslips.gross_pay": draft.gross_pay, **period}, conflicts, rejected)
     for path, name in (("worker.name", draft.worker_name), ("employer.name", draft.employer_name)):
         if name and name.strip():
-            _photo_set(new, path, name.strip()[:100], conflicts)
+            _photo_set(new, {path: name.strip()[:100]}, conflicts, rejected)
     result = {
         "document_type": draft.document_type,
         "shifts_in_document": len(draft.shifts),
         "hourly_wage": draft.hourly_wage, "monthly_wage": draft.monthly_wage, "gross_pay": draft.gross_pay,
         "unreadable": [u[:200] for u in draft.unreadable[:MAX_UNREADABLE]],
         "conflicts": conflicts,
+        "rejected": rejected,
         "reminder": "the worker's message may state facts the document does not show; store them with set_facts "
                     "before you reply",
     }
@@ -414,4 +429,7 @@ def call(case: Case, name: str, args: Any, ctx: Ctx) -> tuple[Case, dict]:
                             f"{', '.join(ALLOWED[phase])}")
     if not isinstance(args, dict):
         return _error(case, "arguments must be an object")
-    return tool.handler(case, args, ctx)
+    try:
+        return tool.handler(case, args, ctx)
+    except Exception as error:  # what the model or a photo sends must never end the turn with a 500
+        return _error(case, f"{name} could not use this input ({type(error).__name__}); nothing was changed")

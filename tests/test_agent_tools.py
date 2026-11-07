@@ -267,8 +267,10 @@ def test_a_photo_does_not_overwrite_what_the_worker_said(monkeypatch):
     case = said(Case(), "我的時薪是185")
     case, _ = tools.call(case, "set_facts", {"facts": [fact("employment.agreed_wage", 185, "時薪是185")]}, ctx())
     read, result = tools.call(case, "read_document", {}, ctx(attachment=Attachment(b"x", "image/png")))
-    assert read.draft["employment"]["agreed_wage"] == 185
-    assert result["conflicts"] == [{"path": "employment.agreed_wage", "kept": 185, "photo": 150}]
+    assert read.draft["employment"] == {"agreed_wage": 185}
+    assert result["conflicts"] == [{"path": "employment.pay_basis", "kept": None, "photo": "hourly"},
+                                   {"path": "employment.agreed_wage", "kept": 185, "photo": 150}]
+    assert [s["date"] for s in read.draft["shifts"]] == ["2026-10-07"]
 
 
 PHOTO_FILE = Attachment(b"x", "image/png")
@@ -315,6 +317,16 @@ def test_a_photo_pay_period_never_pairs_with_a_date_the_worker_gave(monkeypatch)
     assert read.draft["period"] == {"start": "2026-10-01"}
     assert "payslips" not in read.draft
     assert {c["path"] for c in result["conflicts"]} >= {"period.start", "period.end"}
+
+
+def test_a_tool_that_trips_on_what_came_back_reports_it_instead_of_failing_the_turn(monkeypatch):
+    def garbled(data, mime, year):
+        raise ValueError("Expecting value: line 1 column 1 (char 0)")
+
+    monkeypatch.setattr(extraction, "extract", garbled)
+    case = said(Case())
+    kept, result = tools.call(case, "read_document", {}, ctx(attachment=PHOTO_FILE))
+    assert "read_document could not use this input" in result["error"] and kept == case
 
 
 def test_a_photo_that_cannot_be_read_is_an_error_the_model_can_report(monkeypatch):
