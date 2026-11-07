@@ -343,9 +343,37 @@ def test_an_attached_file_is_read_before_the_model_gets_to_choose(monkeypatch):
 
     monkeypatch.setattr(extraction, "extract", lambda data, mime, year: extraction.Draft.model_validate(
         {"document_type": "schedule", "unreadable": [], "shifts": []}))
-    attached = ScriptedLLM([Step.calling(("read_document", {})), Step.saying("請告訴我時薪。")])
+    attached = ScriptedLLM([Step.calling(("read_document", {})), Step.calling(("next_questions", {})), Step.saying("請告訴我時薪。")])
     run_turn(Case(), "這是班表", attached, "zh-TW", Attachment(b"x", "image/png"))
-    assert [r.calls for r in attached.requests] == ["read_document", "auto"]
+    assert [r.calls for r in attached.requests] == ["read_document", "any", "auto"]
+
+
+def test_after_reading_the_file_the_model_must_write_or_ask_before_it_speaks(monkeypatch):
+    """Recorded 2026-11-08: after the forced read, a free model said it had noted the worker's words and never called set_facts."""
+    from labor_radar import extraction
+
+    monkeypatch.setattr(extraction, "extract", lambda data, mime, year: extraction.Draft.model_validate(
+        {"document_type": "schedule", "unreadable": [], "shifts": []}))
+    llm = ScriptedLLM([Step.calling(("read_document", {})),
+                       set_facts(fact("employment.shift_system", "flexible", "老闆每週自己排班")),
+                       Step.saying("記下了。")])
+    result = run_turn(Case(), "老闆每週自己排班，這是班表", llm, "zh-TW", Attachment(b"x", "image/png"))
+    assert result.case.draft["employment"]["shift_system"] == "flexible"
+    assert [r.calls for r in llm.requests] == ["read_document", "any", "auto"]
+
+
+def test_a_call_repeated_within_one_step_runs_once(monkeypatch):
+    from labor_radar import extraction
+
+    reads = []
+    monkeypatch.setattr(extraction, "extract", lambda data, mime, year: reads.append(1) or extraction.Draft.model_validate(
+        {"document_type": "schedule", "unreadable": [], "shifts": []}))
+    llm = ScriptedLLM([Step.calling(("read_document", {}), ("read_document", {})), Step.calling(("next_questions", {})),
+                       Step.saying("請告訴我時薪。")])
+    result = run_turn(Case(), "這是班表", llm, "zh-TW", Attachment(b"x", "image/png"))
+    parts = llm.requests[1].contents[-1]["parts"]
+    assert len(reads) == 1 and [p["functionResponse"]["name"] for p in parts] == ["read_document", "read_document"]
+    assert parts[0] == parts[1] and [e["tool"] for e in result.trace] == ["read_document", "next_questions"]
 
 
 def test_the_model_is_told_a_tapped_answer_is_already_stored():

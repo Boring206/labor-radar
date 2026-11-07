@@ -16,6 +16,7 @@ from labor_radar.i18n import CATALOGS, resolve, t
 from labor_radar.intake import parse_record
 
 MAX_STEPS = 8
+READ = "read_document"
 TRACE_ARGS = 400
 TRACE_RESULT = 240
 
@@ -123,21 +124,25 @@ def _contents_with_reply(contents: list[dict], step: Step, problems: list[guard.
 def _drive(case: Case, llm: LLM, ctx: Ctx, contents: list[dict], trace: list[dict], max_steps: int):
     """Let the model call tools until it answers. Returns the case and its last step, or None for the step
     when it never answered. The first step must be a call: a model left free to answer will say it has
-    noted a fact it never stored, so it reads or writes the case before it speaks."""
-    calls = "read_document" if ctx.attachment is not None else ANY
+    noted a fact it never stored, so it reads or writes the case before it speaks. A file turn reads first,
+    and the step after the read must call again, because reading is not writing the worker's own words."""
+    calls = READ if ctx.attachment is not None else ANY
     for _ in range(max_steps):
         phase = questions.phase(case)
         step = llm.step(system_prompt(case, phase, ctx.lang, ctx.today), contents,
                         [tool.declaration for tool in tools.available(case, ctx)], calls=calls)
-        calls = AUTO
+        calls = ANY if calls == READ else AUTO
         if not step.calls:
             return case, step
         contents.append(step.content)
         responses = []
+        results: dict[str, dict] = {}
         for call in step.calls:
-            case, result = tools.call(case, call.name, call.args, ctx)
-            trace.append(_trace_tool(call.name, call.args, result))
-            responses.append({"functionResponse": {"name": call.name, "response": result}})
+            key = json.dumps([call.name, call.args], sort_keys=True)
+            if key not in results:
+                case, results[key] = tools.call(case, call.name, call.args, ctx)
+                trace.append(_trace_tool(call.name, call.args, results[key]))
+            responses.append({"functionResponse": {"name": call.name, "response": results[key]}})
         contents.append({"role": "user", "parts": responses})
     trace.append({"kind": "limit"})
     return case, None
