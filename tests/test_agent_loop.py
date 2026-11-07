@@ -96,7 +96,7 @@ def test_the_confirmed_conversation_ends_in_a_grounded_report_and_a_mediation_dr
     assert result.trace[0]["tool"] == "run_check" and result.trace[0]["ok"]
     assert result.report_view["disclaimer"].startswith("本工具提供的是法律資訊")
     assert [v["rule_id"] for v in result.report_view["violations"]] == ["minimum_wage", "rest_break"]
-    assert result.case.last_report["violation_count"] == 2
+    assert result.case.reported
     assert not [e for e in result.trace if e["kind"] == "guard"]
 
     follow = ScriptedLLM([Step.calling(("draft_mediation", {})), Step.saying("草稿已經放在報告下方，簽名前請再檢查。")])
@@ -232,8 +232,8 @@ def test_a_reply_in_the_report_phase_that_never_recovers_shows_the_engine_summar
     llm = ScriptedLLM([Step.calling(("run_check", {})), Step.saying("總共少 9,999 元"), Step.saying("還是 9,999 元")])
     result = run_turn(confirmed_case(), "結果", llm, "zh-TW")
     assert "9,999" not in result.reply
-    assert result.reply == "\n".join(["以下是系統算出的結果摘要。", *result.case.last_report["summary"],
-                                      result.case.last_report["disclaimer"]])
+    assert result.reply == "\n".join(["以下是系統算出的結果摘要。", *result.report_view["summary"],
+                                      result.report_view["disclaimer"]])
 
 
 def test_a_model_that_fails_leaves_a_usable_conversation():
@@ -243,7 +243,7 @@ def test_a_model_that_fails_leaves_a_usable_conversation():
 
     result = run_turn(confirmed_case(), "結果", Down(), "zh-TW")
     assert result.trace[0] == {"kind": "llm_error", "message": "Gemini returned HTTP 500"}
-    assert result.phase is Phase.REPORT and result.case.last_report
+    assert result.phase is Phase.REPORT and result.case.reported
     assert result.report_view["violations"]
 
 
@@ -313,7 +313,7 @@ def test_a_tool_the_phase_forbids_leaves_the_case_alone_and_tells_the_model():
     llm = ScriptedLLM([Step.calling(("run_check", {})), Step.saying("我還需要知道你上班的日期和時段。")])
     result = run_turn(Case(), "hi", llm, "zh-TW")
     assert result.trace[0]["ok"] is False and "not available" in result.trace[0]["summary"]
-    assert result.case.last_report is None
+    assert result.case.reported is False
 
 
 def test_the_questions_the_ui_shows_match_the_ones_the_engine_ranks():

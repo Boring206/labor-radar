@@ -6,8 +6,8 @@ import pytest
 from conftest import agent_case
 
 from labor_radar.agent import guard
-from labor_radar.agent.case import Case, Phase, with_turn
-from labor_radar.agent.tools import Ctx, call
+from labor_radar.agent.case import Case, with_turn
+from labor_radar.agent.tools import Ctx, call, report_for
 
 
 @pytest.fixture
@@ -22,8 +22,8 @@ def reported(sample):
     return checked
 
 
-def bad(text, case, phase=Phase.CONFIRM, extra=()):
-    return [p.token for p in guard.check(text, case, phase, extra)]
+def bad(text, case, extra=()):
+    return [p.token for p in guard.check(text, case, report_for(case, "zh-TW"), extra)]
 
 
 @pytest.mark.parametrize("text", [
@@ -75,14 +75,14 @@ def test_only_list_markers_are_free(text, token, case):
 
 
 def test_numbers_from_the_report_are_grounded_and_others_are_not(reported):
-    paragraph = f"估計短少 {reported.last_report['claim']['shortfall']} 元，依勞動基準法第 35 條。"
-    assert bad(paragraph, reported, Phase.REPORT) == []
-    assert bad("估計短少 1,857 元", reported, Phase.REPORT) == ["1,857"]
+    paragraph = f"估計短少 {report_for(reported, 'zh-TW')['claim']['shortfall']} 元，依勞動基準法第 35 條。"
+    assert bad(paragraph, reported) == []
+    assert bad("估計短少 1,857 元", reported) == ["1,857"]
 
 
 def test_article_numbers_need_the_report_to_cite_them(reported):
-    assert bad("勞動基準法第 35 條", reported, Phase.REPORT) == []
-    assert bad("勞動基準法第 84-1 條", reported, Phase.REPORT) == ["第 84-1 條"]
+    assert bad("勞動基準法第 35 條", reported) == []
+    assert bad("勞動基準法第 84-1 條", reported) == ["第 84-1 條"]
 
 
 def test_text_a_tool_produced_counts_when_the_loop_passes_it_on(case):
@@ -94,13 +94,13 @@ def test_text_a_tool_produced_counts_when_the_loop_passes_it_on(case):
 @pytest.mark.parametrize("term", guard.LEGALITY_TERMS)
 def test_every_judging_word_is_blocked_before_the_report_and_allowed_in_it(term, reported):
     sentence = f"老闆這樣做{term}。"
-    assert bad(sentence, reported, Phase.CONFIRM) == [term]
-    assert bad(sentence, reported, Phase.REPORT) == []
+    assert bad(sentence, reported.model_copy(update={"reported": False})) == [term]
+    assert bad(sentence, reported) == []
 
 
-@pytest.mark.parametrize("phase", [Phase.GATHER, Phase.CLARIFY, Phase.CONFIRM])
-def test_no_judgment_in_any_phase_before_the_report(phase, case):
-    assert bad("這看起來違法。", case, phase) == ["違法"]
+def test_confirmed_facts_are_not_a_report_until_the_check_runs(sample):
+    confirmed = agent_case(sample).model_copy(update={"confirmed": True})
+    assert bad("這看起來違法。", confirmed) == ["違法"]
 
 
 def test_plain_questions_pass(case):

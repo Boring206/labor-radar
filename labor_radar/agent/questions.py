@@ -102,7 +102,7 @@ def _impact(case: Case, question: Question, open_questions: list[Question]) -> I
 @lru_cache(maxsize=64)
 def _analyze(draft_json: str, answered: tuple[str, ...]) -> Analysis:
     case = Case.model_construct(draft=json.loads(draft_json), provenance={}, answered=list(answered),
-                                confirmed=False, history=[], last_report=None)
+                                confirmed=False, history=[], reported=False)
     if gaps(case):
         return Analysis((), ())
     impacts, quiet = [], []

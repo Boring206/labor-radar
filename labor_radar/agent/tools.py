@@ -33,7 +33,7 @@ from labor_radar.agent.case import (
 )
 from labor_radar.engine import assess
 from labor_radar.i18n import t
-from labor_radar.intake import IntakeError, parse_record
+from labor_radar.intake import parse_record
 from labor_radar.rules import law
 from labor_radar.rules.registry import RULES
 
@@ -50,13 +50,28 @@ class Attachment:
     name: str = ""
 
 
+@dataclass(frozen=True)
+class Grounded:
+    text: str
+    facts: dict | None
+    """The facts the text was derived from, or None when it does not depend on them, like the law."""
+
+
 @dataclass
 class Ctx:
     lang: str
     attachment: Attachment | None = None
     today: date = field(default_factory=date.today)
-    grounded: list[str] = field(default_factory=list)
+    grounded: list[Grounded] = field(default_factory=list)
     """Text a tool produced from the engine or the law. The guard accepts its numbers."""
+
+    def ground(self, text: str, case: Case | None = None) -> None:
+        """Text derived from `case` vouches for its numbers only while those facts hold."""
+        self.grounded.append(Grounded(text, facts_state(case) if case is not None else None))
+
+    def grounding(self, case: Case) -> list[str]:
+        facts = facts_state(case)
+        return [g.text for g in self.grounded if g.facts is None or g.facts == facts]
 
 
 Handler = Callable[[Case, dict, Ctx], tuple[Case, dict]]
@@ -246,7 +261,7 @@ def next_questions(case: Case, args: dict, ctx: Ctx) -> tuple[Case, dict]:
         result |= questions.describe(case, ctx.lang)
         result["question_count"] = len(result["questions"])
     result["optional_missing"] = [p for p in ("payslips.gross_pay", "city") if get_path(case.draft, p) is None]
-    ctx.grounded.append(json.dumps(result, ensure_ascii=False))
+    ctx.ground(json.dumps(result, ensure_ascii=False), case)
     return case, result
 
 
@@ -273,14 +288,17 @@ def compact_view(view: dict) -> dict:
     }
 
 
+def report_for(case: Case, lang: str) -> dict | None:
+    """The report the model may cite: the engine's findings on the current facts, once run_check has shown
+    them. Computed from the facts each time it is needed."""
+    if not case.reported or questions.phase(case) is not Phase.REPORT:
+        return None
+    return compact_view(report.render(assess(parse_record(materialize(case))), lang))
+
+
 def run_check(case: Case, args: dict, ctx: Ctx) -> tuple[Case, dict]:
-    try:
-        assessment = assess(parse_record(materialize(case)))
-    except IntakeError as error:
-        return _error(case, "the facts do not pass the checks: " + "; ".join(error.problems))
-    view = compact_view(report.render(assessment, ctx.lang))
-    ctx.grounded.append(json.dumps(view, ensure_ascii=False))
-    return case.model_copy(update={"last_report": view}), view
+    reported = case.model_copy(update={"reported": True})
+    return reported, report_for(reported, ctx.lang)
 
 
 @cache
@@ -304,18 +322,18 @@ def explain_rule(case: Case, args: dict, ctx: Ctx) -> tuple[Case, dict]:
     articles = [{"label": c.label, "url": c.url, "text": _law_text().get(f"{c.law}第{c.flno}條", "")}
                 for c in rule.citations]
     result = {"rule_id": rule.id, "title": t(ctx.lang, f"rule.{rule.id}.title"), "articles": articles}
-    ctx.grounded.append(json.dumps(result, ensure_ascii=False))
+    ctx.ground(json.dumps(result, ensure_ascii=False))
     return case, result
 
 
 def draft_mediation(case: Case, args: dict, ctx: Ctx) -> tuple[Case, dict]:
-    last = case.last_report
-    if not last:
+    view = report_for(case, ctx.lang)
+    if view is None:
         return _error(case, "run_check first: there is no report yet")
-    if not last["violation_count"]:
+    if not view["violation_count"]:
         return _error(case, "the report found no item to put in an application, so there is nothing to draft")
     text = paperwork.mediation_draft(assess(parse_record(materialize(case))))
-    ctx.grounded.append(text)
+    ctx.ground(text, case)
     return case, {"mediation_draft": text, "note": "the page shows this draft under the report; do not paste it again"}
 
 
@@ -324,7 +342,7 @@ def find_help(case: Case, args: dict, ctx: Ctx) -> tuple[Case, dict]:
     if not isinstance(city, str) or len(city) > 20:
         return _error(case, "city must be a short place name such as 高雄市")
     result = {"referrals": referrals.for_city(ctx.lang, city.strip())}
-    ctx.grounded.append(json.dumps(result, ensure_ascii=False))
+    ctx.ground(json.dumps(result, ensure_ascii=False))
     return case, result
 
 

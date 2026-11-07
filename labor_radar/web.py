@@ -116,6 +116,6 @@ def agent_turn(payload: str = Form(...), file: UploadFile | None = File(None),
 def agent_confirm(body: ConfirmIn, lang: str = Query(REFERENCE)) -> dict:
     if questions.phase(body.case) is not Phase.CONFIRM:
         raise HTTPException(status_code=409, detail="the facts cannot be confirmed yet, or are already confirmed")
-    case = body.case.model_copy(update={"confirmed": True})
+    case = body.case.model_copy(update={"confirmed": True, "reported": False})
     return {"case": case, "phase": questions.phase(case),
             "facts": [row.as_dict() for row in fact_table(case, resolve(lang))]}

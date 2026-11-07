@@ -37,7 +37,7 @@ def test_run_check_is_invisible_and_refused_until_the_worker_confirms(sample):
     assert questions.phase(case) is Phase.CONFIRM
     assert "run_check" not in names(case)
     refused_case, result = tools.call(case, "run_check", {}, ctx())
-    assert "not available" in result["error"] and refused_case.last_report is None
+    assert "not available" in result["error"] and refused_case.reported is False
     confirmed = case.model_copy(update={"confirmed": True})
     assert "run_check" in names(confirmed)
     _, report = tools.call(confirmed, "run_check", {}, ctx())
@@ -56,11 +56,10 @@ def test_report_tools_are_closed_in_every_phase_before_the_report(tool):
 
 def test_a_changed_fact_after_confirmation_puts_the_worker_back_at_the_table(sample):
     confirmed = said(agent_case(sample), "改成時薪200").model_copy(update={"confirmed": True})
-    _, report = tools.call(confirmed, "run_check", {}, ctx())
-    confirmed = confirmed.model_copy(update={"last_report": report})
+    confirmed, _ = tools.call(confirmed, "run_check", {}, ctx())
     changed, result = tools.call(confirmed, "set_facts",
                                  {"facts": [fact("employment.agreed_wage", 200, "時薪200")]}, ctx())
-    assert changed.confirmed is False and changed.last_report is None
+    assert changed.confirmed is False and changed.reported is False
     assert result["phase"] == "confirm"
     assert "run_check" not in names(changed)
 

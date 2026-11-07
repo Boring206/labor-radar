@@ -58,20 +58,20 @@ class TurnResult(BaseModel):
     report_view: dict | None = None
 
 
-def _snapshot(case: Case) -> str:
+def _snapshot(case: Case, report: dict | None) -> str:
     lines = [f"- {row.label}：{row.value}（{row.source.value}{'，假設' if row.assumed else ''}）"
              for row in fact_table(case, "zh-TW")]
     out = ["目前的資料表：", *lines] if lines else ["目前的資料表：空的"]
     if case.answered:
         out.append(f"已經問過、不要再問的題目：{', '.join(case.answered)}")
-    if case.last_report:
-        out += ["最近一次 run_check 的結果：", json.dumps(case.last_report, ensure_ascii=False)]
+    if report:
+        out += ["最近一次 run_check 的結果：", json.dumps(report, ensure_ascii=False)]
     return "\n".join(out)
 
 
 def system_prompt(case: Case, phase: Phase, lang: str, today: date) -> str:
     return SYSTEM.format(language=CATALOGS[lang]["_meta.name"], today=today.isoformat(),
-                         phase=PHASES[phase], snapshot=_snapshot(case))
+                         phase=PHASES[phase], snapshot=_snapshot(case, tools.report_for(case, lang)))
 
 
 def _contents(case: Case, attachment: Attachment | None) -> list[dict]:
@@ -105,9 +105,9 @@ def _fallback(case: Case, phase: Phase, ctx: Ctx) -> tuple[Case, str]:
         return case, f"{first['question']}\n" + "、".join(o["label"] for o in first["options"])
     if phase is Phase.CONFIRM:
         return case, t(lang, "agent.fallback.confirm")
-    if not case.last_report:
+    if not case.reported:
         case, _ = tools.call(case, "run_check", {}, ctx)
-    view = case.last_report
+    view = tools.report_for(case, lang)
     return case, "\n".join([t(lang, "agent.fallback.report"), *view["summary"], view["disclaimer"]])
 
 
@@ -142,7 +142,9 @@ def _drive(case: Case, llm: LLM, ctx: Ctx, contents: list[dict], trace: list[dic
 def _guarded(case: Case, llm: LLM, ctx: Ctx, contents: list[dict], step: Step, trace: list[dict]) -> str | None:
     """The reply if it passes the guard, after at most one rewrite. None means use the fixed text."""
     phase = questions.phase(case)
-    problems = guard.check(step.text, case, phase, ctx.grounded) if step.text else [guard.EMPTY]
+    report_now = tools.report_for(case, ctx.lang)
+    grounded = ctx.grounding(case)
+    problems = guard.check(step.text, case, report_now, grounded) if step.text else [guard.EMPTY]
     if not problems:
         return step.text
     event = {"kind": "guard", "text": _brief(step.text, 300),
@@ -151,7 +153,7 @@ def _guarded(case: Case, llm: LLM, ctx: Ctx, contents: list[dict], step: Step, t
         retry = llm.step(system_prompt(case, phase, ctx.lang, ctx.today),
                          _contents_with_reply(contents, step, problems),
                          [tool.declaration for tool in tools.available(case, ctx)], calls=NONE)
-        again = guard.check(retry.text, case, phase, ctx.grounded) if retry.text else [guard.EMPTY]
+        again = guard.check(retry.text, case, report_now, grounded) if retry.text else [guard.EMPTY]
         if not again:
             trace.append({**event, "action": "rewritten", "rewrite": _brief(retry.text, 300)})
             return retry.text
@@ -179,7 +181,7 @@ def run_turn(case: Case, message: str, llm: LLM, lang: str, attachment: Attachme
     case = with_turn(case, "assistant", reply)
     phase = questions.phase(case)
     view = None
-    if phase is Phase.REPORT and case.last_report:
+    if phase is Phase.REPORT and case.reported:
         view = report.render(assess(parse_record(materialize(case))), lang)
     return TurnResult(
         case=case, reply=reply, trace=trace, phase=phase,

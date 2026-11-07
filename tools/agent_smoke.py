@@ -121,8 +121,8 @@ def main() -> int:
             result = run_turn(case, message, llm, "zh-TW")
             case = result.case
             out += render_turn(turn, message, None, result)
-        out += ["## 規則引擎的結果（最後一次檢查）", "", *[f"- {line}" for line in result.case.last_report["summary"]], ""]
-        out += [f"- {v['title']}：{v['explanation']}" for v in result.case.last_report["violations"]]
+        out += ["## 規則引擎的結果（最後一次檢查）", "", *[f"- {line}" for line in result.report_view["summary"]], ""]
+        out += [f"- {v['title']}：{v['explanation']}" for v in result.report_view["violations"]]
         out += ["", "## 調解申請書草稿（節錄）", "", "```text",
                 *result.report_view["mediation_draft"].splitlines()[:40], "```", ""]
     else:

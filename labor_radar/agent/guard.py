@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Literal
 
-from labor_radar.agent.case import Case, Phase
+from labor_radar.agent.case import Case
 
 LEGALITY_TERMS = (
     "違法", "違反", "不合法", "違規", "犯法", "少給", "積欠", "欠你", "欠薪", "應補", "可以請求", "可請求",
@@ -90,22 +90,24 @@ class Problem:
 EMPTY = Problem("empty", "", "回覆是空的。")
 
 
-def grounding(case: Case, extra: Iterable[str] = ()) -> set[Token]:
+def grounding(case: Case, report: dict | None, extra: Iterable[str] = ()) -> set[Token]:
     """Numbers the reply may use: the facts, what the worker typed, the report, and tool output the
     engine produced. The assistant's own earlier replies are left out on purpose."""
     texts = [json.dumps(case.draft, ensure_ascii=False), case.user_text(),
-             json.dumps(case.last_report, ensure_ascii=False) if case.last_report else "",
+             json.dumps(report, ensure_ascii=False) if report else "",
              f"shifts: {len(case.draft.get('shifts', []))}", *extra]
     return set().union(*(tokens(text, source=True) for text in texts))
 
 
-def check(text: str, case: Case, phase: Phase, extra: Iterable[str] = ()) -> list[Problem]:
+def check(text: str, case: Case, report: dict | None, extra: Iterable[str] = ()) -> list[Problem]:
+    """`report` is the engine's report on the current facts, or None while there is none. Only a report
+    lets the reply judge legality."""
     problems = []
-    known = grounding(case, extra)
+    known = grounding(case, report, extra)
     for token in sorted(tokens(text) - known, key=str):
         shown = describe(token)
         problems.append(Problem("number", shown, f"回覆提到「{shown}」，但這個數字不在資料、工人說的話或報告裡。"))
-    if phase is not Phase.REPORT:
+    if report is None:
         for term in LEGALITY_TERMS:
             if term in text:
                 problems.append(Problem("term", term, f"報告出來之前不能使用「{term}」這類判斷合法性的字眼。"))

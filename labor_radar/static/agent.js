@@ -1,7 +1,7 @@
 const agent = { case: emptyCase(), last: null, turns: [], busy: false, shownReport: false };
 
 function emptyCase() {
-  return { draft: {}, provenance: {}, answered: [], confirmed: false, history: [], last_report: null };
+  return { draft: {}, provenance: {}, answered: [], confirmed: false, history: [], reported: false };
 }
 
 function setMode(mode) {

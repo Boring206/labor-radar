@@ -5,7 +5,6 @@ The draft is a partial RecordIn. `materialize` fills the rest with stated defaul
 """
 
 import copy
-import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
@@ -22,7 +21,6 @@ from labor_radar.model import WEEKDAYS, Answer, PayBasis, Relationship, ShiftSys
 HISTORY_CAP = 20
 UNSET_NAME = "未提供"
 SHIFT_KEY = "shift:{date}T{start}"
-MAX_REPORT_JSON = 200_000
 
 
 class Source(StrEnum):
@@ -230,7 +228,9 @@ class Case(_Strict):
     confirmed: bool = False
     """Set only by the confirm endpoint. Every tool that changes a fact clears it."""
     history: list[Turn] = Field(default_factory=list, max_length=HISTORY_CAP)
-    last_report: dict | None = None
+    reported: bool = False
+    """run_check has shown the engine's report on these facts. The report itself is never sent: the server
+    computes it again from the facts, so nothing the client holds can stand in for it."""
 
     @field_validator("draft")
     @classmethod
@@ -254,16 +254,9 @@ class Case(_Strict):
             raise ValueError("answered holds question ids")
         return list(dict.fromkeys(answered))
 
-    @field_validator("last_report")
-    @classmethod
-    def _bounded_report(cls, report: dict | None) -> dict | None:
-        if report is not None and len(json.dumps(report, ensure_ascii=False)) > MAX_REPORT_JSON:
-            raise ValueError("last_report is too large")
-        return report
-
     def changed(self) -> "Case":
         """The same facts after a change: whatever the worker confirmed or read no longer holds."""
-        return self.model_copy(update={"confirmed": False, "last_report": None})
+        return self.model_copy(update={"confirmed": False, "reported": False})
 
     def user_text(self) -> str:
         return "\n".join(turn.text for turn in self.history if turn.role == "user")
