@@ -56,6 +56,8 @@ input, select, textarea, button { font: inherit; }
 input, select, textarea {
   padding: .45rem .6rem; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink);
 }
+input[type=file], select { max-width: 100%; }
+.grid > *, .questions > * { min-width: 0; }
 textarea { width: 100%; font-family: ui-monospace, Consolas, monospace; font-size: .85rem; }
 details { margin: .75rem 0; }
 
