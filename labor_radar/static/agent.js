@@ -8,6 +8,7 @@ function setMode(mode) {
   const isAgent = mode === "agent";
   $("form-mode").hidden = isAgent;
   $("agent-mode").hidden = !isAgent;
+  document.body.classList.toggle("wide", isAgent);
   $("tab-form").classList.toggle("active", !isAgent);
   $("tab-agent").classList.toggle("active", isAgent);
   if (isAgent) renderAgent();
