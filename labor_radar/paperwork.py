@@ -28,7 +28,7 @@ STORY = {
     ("monthly_overtime_cap", "over_46"): "{month} 延長工作時間（含休息日出勤）共 {overtime} 小時，超過每月 46 小時之上限。",
     ("shift_rest", "under_11"): "{end} 下班後，{start} 即排定上班，更換班次之間僅休息 {rest} 小時，未達連續 11 小時。",
     ("shift_rest", "under_8"): "{end} 下班後，{start} 即排定上班，更換班次之間僅休息 {rest} 小時，未達連續 8 小時。",
-    ("rest_break", "no_break"): "{dates} 各日連續工作逾 4 小時（最長 {longest} 小時），期間未給予休息。",
+    ("rest_break", "no_break"): "{dates} 各日連續工作逾 4 小時（最長 {longest} 小時），班次紀錄未記載休息時間。",
     ("regular_leave", "over_6"): "{first} 至 {last} 連續出勤 {days} 日，超過 6 日。",
     ("rest_day_pay", "inferred"): "{date} 所在之週休息不足 2 日，{date} 出勤 {hours} 小時應屬休息日工作，請求依第 24 條第 2 項給付休息日工資。",
     ("rest_day_pay", "inferred_assumed"): "以{weekday}為 7 日週期起日計算，{date} 所在之週休息不足 2 日，{date} 出勤 {hours} 小時應屬休息日工作，請求依第 24 條第 2 項給付休息日工資。",
